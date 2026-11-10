@@ -1,0 +1,10 @@
+name: ont_truvari
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - truvari>=5.4,<6
+  - bcftools>=1.12
+  - htslib

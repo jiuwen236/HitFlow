@@ -1,0 +1,10 @@
+name: ngs_sv_cnvpytor
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - cnvpytor
+  - samtools>=1.10
+  - htslib 

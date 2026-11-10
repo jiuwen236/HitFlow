@@ -1,0 +1,22 @@
+# Snakemake Profile for Local Execution with Apptainer
+# Usage: snakemake --profile profiles/local-apptainer
+# Equivalent to: scripts/run_snakemake.sh --local --sdm apptainer --apptainer-args "--cleanenv"
+
+# ----- Executor settings -----
+# Local execution (default executor, no need to specify)
+cores: 32
+
+# ----- Software deployment -----
+software-deployment-method: apptainer
+# The working directory is mounted automatically. When running elsewhere,
+# also bind the HitFlow installation directory for bundled scripts and binaries.
+# Bind every other directory
+# that holds inputs, references or databases, e.g. "-B /data,/refs --cleanenv".
+apptainer-args: "--cleanenv"
+
+# ----- Run behavior -----
+rerun-incomplete: true
+keep-going: true
+
+# ----- Report -----
+# Use: snakemake --report workflow_report.html

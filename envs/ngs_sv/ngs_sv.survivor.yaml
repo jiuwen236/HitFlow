@@ -1,0 +1,10 @@
+name: ngs_sv_survivor
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - survivor>=1.0.7
+  - htslib>=1.16
+  - tabix 

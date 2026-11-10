@@ -1,0 +1,12 @@
+# Conda environment for GATK Funcotator
+# Funcotator is included in GATK4 package
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+
+dependencies:
+  - gatk4>=4.6,<=4.8
+  - bcftools
+  - tabix
+  - htslib

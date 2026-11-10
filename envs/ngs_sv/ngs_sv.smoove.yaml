@@ -1,0 +1,11 @@
+name: ngs_sv_smoove
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - smoove<1
+  - samtools>=1.14
+  - bcftools>=1.12
+  - htslib
+  - gsort 

@@ -1,0 +1,8 @@
+name: ont_svim
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - svim>=2.0,<3

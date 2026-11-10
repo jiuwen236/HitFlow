@@ -1,0 +1,14 @@
+name: ont_cutesv
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - cutesv>=2.0,<3
+  - samtools>=1.14
+  - bcftools>=1.12
+  - htslib
+  - pip
+  - pip:
+    - cuteFC 

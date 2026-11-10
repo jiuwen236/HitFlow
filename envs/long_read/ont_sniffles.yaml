@@ -1,0 +1,8 @@
+name: ont_sniffles
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - sniffles>=2.0,<3

@@ -1,0 +1,8 @@
+name: ont_survivor
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - survivor>=1.0.7,<2

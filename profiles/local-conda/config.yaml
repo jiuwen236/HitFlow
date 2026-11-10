@@ -1,0 +1,17 @@
+# Snakemake Profile for Local Execution with Conda
+# Usage: snakemake --profile profiles/local-conda
+# Equivalent to: scripts/run_snakemake.sh --local --sdm conda
+
+# ----- Executor settings -----
+# Local execution (default executor, no need to specify)
+cores: 32
+
+# ----- Software deployment -----
+software-deployment-method: conda
+
+# ----- Run behavior -----
+rerun-incomplete: true
+keep-going: true
+
+# ----- Report -----
+# Use: snakemake --report workflow_report.html

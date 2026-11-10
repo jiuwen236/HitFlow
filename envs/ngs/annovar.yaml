@@ -1,0 +1,13 @@
+name: annovar
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - perl
+  - perl-lwp-simple
+  - perl-http-tiny
+  - bcftools >=1.14
+  - htslib >=1.14
+  - samtools >=1.14
+  - tabix

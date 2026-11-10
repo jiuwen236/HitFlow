@@ -1,0 +1,45 @@
+# Merge this overlay with an existing complete HitFlow configuration.
+# Enable platform switches below only for the required data types.
+ngs_sv:
+  hitsv:
+    enabled: false
+  # Set false for caller-only runs; true retains existing NGS SURVIVOR merging.
+  merge_per_sample: true
+
+tgs_config:
+  sv_detection:
+    hitsv:
+      enabled: false
+    # For caller-only runs set merge_per_sample/force_calling/population_merge false.
+
+hitsv:
+  # Optional srs_bams/lrs_bams maps may supply existing BAMs by sample ID.
+  # binary defaults to <workflow source>/bin/HitSV/2.0.4/HitSV.
+  # chromosomes defaults to the top-level list; IDs are read from BAM headers.
+  # cache_dir can point to a shared project cache for the same reference.
+  # srs_work_dir may reference completed SRS statistics/TL intermediates for Hybrid.
+  annotate: false
+  call_mem_mb: 16384
+  # Streaming statistics/extraction do not retain the full BAM in memory.
+  preprocess_mem_mb: 1024
+  # Optional per-task overrides: reference_stat_mem_mb, bam_stat_mem_mb, trans_reads_mem_mb.
+  sort_threads: 2
+  min_sv_length: 50
+  # Repair requires FASTA and internally consistent contig/CIGAR evidence.
+  repair_padding: false
+  # quarantine preserves invalid allele records in JSONL; error is fail-fast.
+  invalid_allele_policy: error
+  alignment_preset: asm5
+  # lrs_preset defaults to HIFI for PACBIO_HIFI and ERR_PRONE otherwise.
+  # Set ONT_Q20 explicitly for verified high-quality ONT reads (<1% errors).
+  hybrid:
+    enabled: false
+    # Use samples_pairs_csv. When BAM SM tags differ, map verified aliases to
+    # the same biological identity, e.g. {HG002_NA24385_son: HG002}.
+    sample_identities: {}
+    # K-mer error profile passed as -k for SRS polishing of LRS contigs; defaults
+    # to the official profile shipped with HitSV 2.0.4. Set null to omit -k.
+    # error_profile: /path/to/9mer_profile
+
+annotsv:
+  enabled: true

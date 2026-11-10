@@ -1,0 +1,36 @@
+# Snakemake Profile for SLURM with Apptainer
+# Usage: snakemake --profile profiles/slurm-apptainer
+# Equivalent to: scripts/run_snakemake.sh --slurm --sdm apptainer --apptainer-args "--cleanenv"
+
+# ----- Executor settings -----
+executor: cluster-generic
+jobs: 100
+cores: 32
+latency-wait: 60
+
+# SLURM submission command
+# Add "-p <partition>" (and e.g. "--account <name>") below if your cluster needs it.
+cluster-generic-submit-cmd: >-
+  sbatch
+  --cpus-per-task={threads}
+  --mem={resources.mem_mb}M
+  --time={resources.time}
+  -o logs_cluster/slurm-%j.out
+  --error logs_cluster/slurm-%j-error.out
+
+# ----- Software deployment -----
+software-deployment-method: apptainer
+# The working directory is mounted automatically. When running elsewhere,
+# also bind the HitFlow installation directory for bundled scripts and binaries.
+# Bind every other directory
+# that holds inputs, references or databases, e.g. "-B /data,/refs --cleanenv".
+apptainer-args: "--cleanenv"
+
+# ----- Run behavior -----
+rerun-incomplete: true
+keep-going: true
+# One retry means at most two attempts per failed job.
+retries: 1
+
+# ----- Report -----
+# Use: snakemake --report workflow_report.html

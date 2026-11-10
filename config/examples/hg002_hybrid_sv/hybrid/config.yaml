@@ -1,0 +1,541 @@
+# HitSV Hybrid on HG002: the 30x short-read BAM from shared/ plus a 4x
+# HiFi subsample (seed 11; seeds 23 and 37 differ only in the HiFi BAM).
+# Copied from the benchmark run; site-specific absolute paths were replaced
+# with relative ones (data/, ref_data/). Adjust paths before use.
+
+workflows:
+  enable_basic_ngs_workflows: false
+  enable_ngs_single_sample_filtering: false
+  enable_ngs_sv_detection: false
+  enable_ngs_joint_calling: false
+  enable_tgs_sv_detection: true
+  enable_tgs_variant_calling: false
+  enable_tgs_variant_annotation: false
+  enable_tgs_joint_calling: false
+  enable_tgs_phasing: false
+  enable_multiqc: false
+reference:
+  genome: ref_data/ref/grch38/GRCh38_full_analysis_set_plus_decoy_hla.fa
+input_data:
+  base_dir:
+  - ''
+samples_csv: "samples_ngs.csv"
+samples_vcf_csv: unused_vcf.csv
+samples_ont_csv: "samples_tgs.csv"
+scan_ngs_dirs: []
+scan_tgs_dirs: []
+output:
+  root: results
+  multiqc: results/multiqc
+  ngs:
+    preprocessing: results/ngs/preprocessing
+    alignment: data/hg002/ngs_30x_alignment
+    variants:
+      single_sample: results/ngs/variants/single_sample
+      cohort: results/ngs/variants/cohort
+    sv:
+      single_sample: results/ngs/structural_variants/single_sample
+      cohort: results/ngs/structural_variants/cohort
+    qc_reports: results/ngs/qc_reports
+  tgs:
+    preprocessing: results/tgs/preprocessing
+    variants:
+      single_sample: results/tgs/variants/single_sample
+      cohort: results/tgs/variants/cohort
+    sv:
+      single_sample: results/tgs/structural_variants/single_sample
+      cohort: results/tgs/structural_variants/cohort
+    qc_reports: results/tgs/qc_reports
+  logs: logs
+  tmp: tmp
+fastp:
+  enabled: true
+  threads: 4
+  mem: 8g
+  options: -q 20 -u 30 -l 50 --trim_poly_g --detect_adapter_for_pe
+fastqc:
+  threads: 2
+  mem: 5g
+  options: -k 7
+bwa:
+  threads: 16
+  mem: 30g
+  options: -K 100000000 -Y
+sambamba:
+  sort_mem: 40G
+gatk:
+  known_sites_vcf: ref_data/hg19_GATK/dbsnp_138.b37.vcf.gz
+gatk_paras:
+  mem_baserecalibrator_job: 7G
+  java_opts_baserecalibrator: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304
+    -Xmx5G
+  mem_applybqsr_job: 15G
+  java_opts_applybqsr: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx10G
+  static_quals:
+  - 10
+  - 20
+  - 30
+  applybqsr_options: --add-output-sam-program-record --use-original-qualities
+  haplotypecaller:
+    mem: 15G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx10G
+    contamination: 0
+    gqb_values:
+    - 10
+    - 20
+    - 30
+    - 40
+    - 50
+    - 60
+    - 70
+    - 80
+    - 90
+    annotations:
+    - StandardAnnotation
+    - StandardHCAnnotation
+    - AS_StandardAnnotation
+picard:
+  mem: 10G
+  max_records: 250000
+  mem_merge_recal_bams_job: 20G
+  java_opts_merge_recal_bams: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304
+    -Xmx10G
+verifybamid2:
+  enabled: false
+  svd_prefix: ref_data/ref/verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat
+multiqc:
+  outdir: results/multiqc
+  filename: multiqc_report.html
+  title: WGS Pipeline QC Report
+  export_plots: true
+  modules: []
+  extra_args: --interactive
+wes:
+  targets_bed: ''
+  interval_padding: 0
+ngs_single_sample_variants:
+  genotypegvcfs:
+    mem: 10G
+    java_opts: -Xmx8G -XX:ParallelGCThreads=1
+  filtering:
+    snp_filters:
+    - QD < 2.0
+    - FS > 60.0
+    - MQ < 40.0
+    - MQRankSum < -12.5
+    - ReadPosRankSum < -8.0
+    indel_filters:
+    - QD < 2.0
+    - FS > 200.0
+    - ReadPosRankSum < -20.0
+  normalize:
+    options: -m -both
+  annotation:
+    tool: funcotator
+    funcotator:
+      mem: 12G
+      java_opts: -Xmx10G -XX:ParallelGCThreads=1
+      data_sources: ref_data/funcotator_dataSources/funcotator_dataSources.v1.8.hg38.20230908g
+      ref_version: hg38
+      transcript_selection_mode: CANONICAL
+      annotation_defaults: []
+      annotation_overrides: []
+      exclude_fields: []
+    snpeff:
+      mem: 10G
+      java_opts: -Xmx8G
+      threads: 4
+      genome: GRCh38.99
+      data_dir: ref_data/snpEff
+      options: ''
+ngs_sv:
+  manta:
+    enabled: false
+  smoove:
+    enabled: false
+  cnvpytor:
+    enabled: false
+  hitsv:
+    enabled: false
+  merge_per_sample: false
+  survivor:
+    enable_population_merge: false
+joint_calling:
+  genomicsdbimport:
+    mem: 4G
+    java_opts: -Xmx3g -Xms3g
+    batch_size: 50
+    reader_threads: 1
+  genotypegvcfs:
+    mem: 5G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx4G
+  gathervcfs:
+    mem: 25G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx20G
+vqsr:
+  enabled: false
+  resources:
+    hapmap: ref_data/vqsr_resources/hapmap_3.3.hg38.vcf.gz
+    omni: ref_data/vqsr_resources/1000G_omni2.5.hg38.vcf.gz
+    1000g_snps: ref_data/vqsr_resources/1000G_phase1.snps.high_confidence.hg38.vcf.gz
+    dbsnp: ref_data/hg19_GATK/dbsnp_138.b37.vcf.gz
+    mills_indels: ref_data/vqsr_resources/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz
+vqsr_paras:
+  snp_recalibration:
+    mem: 35G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx30G
+    tranches:
+    - 100.0
+    - 99.99
+    - 99.98
+    - 99.97
+    - 99.96
+    - 99.95
+    - 99.9
+    - 99.0
+    annotations:
+    - QD
+    - MQ
+    - MQRankSum
+    - ReadPosRankSum
+    - FS
+    - SOR
+    - DP
+    max_gaussians: 8
+    ts_filter_level: 99.98
+  indel_recalibration:
+    mem: 35G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx30G
+    tranches:
+    - 100.0
+    - 99.99
+    - 99.98
+    - 99.97
+    - 99.96
+    - 99.95
+    - 99.9
+    - 99.0
+    annotations:
+    - QD
+    - DP
+    - FS
+    - ReadPosRankSum
+    max_gaussians: 4
+    ts_filter_level: 99.9
+  applyvqsr:
+    mem: 5G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx4G
+phasing:
+  enabled: false
+  use_map: true
+  use_reference: true
+  skip_chromosomes:
+  - chrM
+  - chrY
+  shapeit:
+    genetic_map: ref_data/phasing_resources/genetic_map/chr{chrom}.b38.gmap.gz
+    reference: ref_data/phasing_resources/1000g_phased/1kGP_high_coverage_Illumina.chr{chrom}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz
+phasing_paras:
+  shapeit:
+    threads: 8
+    pbwt_mac: 1
+vcf_processing:
+  normalize:
+    options: -m -both
+  filtering:
+    max_missing: 0.95
+    hwe_threshold: 1.0e-06
+tgs_config:
+  platform: PACBIO_HIFI
+  sv_detection:
+    sniffles:
+      enabled: false
+    cutesv:
+      enabled: false
+    svim:
+      enabled: false
+    nanovar:
+      enabled: false
+    pbsv:
+      enabled: false
+    hitsv:
+      enabled: true
+    merge_per_sample: false
+    force_calling: false
+    population_merge: false
+  survivor:
+    max_distance: 1000
+    min_support: 1
+    population_support: 1
+    min_length: 50
+  collapse:
+    pctseq: 0.7
+    pctsize: 0.5
+    refdist: 500
+    min_callers: 3
+  sv_filter:
+    enabled: true
+    min_length: 50
+minimap2:
+  threads: 16
+  mem: 30g
+  options: -a -z 600,200 --MD -c -Y
+nanoplot:
+  threads: 8
+  mem: 10g
+  options: --tsv_stats --info_in_report -f png --plots dot --legacy
+sniffles:
+  threads: 8
+  mem: 15g
+  min_support: 2
+  min_length: 30
+  options: ''
+cutesv:
+  threads: 16
+  mem: 20g
+  min_support: 2
+  options: --max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 --max_cluster_bias_DEL
+    100 --diff_ratio_merging_DEL 0.3 --genotype
+svim:
+  threads: 8
+  mem: 15g
+  min_sv_size: 30
+  minimum_depth: 1
+  options: --read_names
+nanovar:
+  threads: 16
+  mem: 20g
+  options: -f hg38 --minlen 30
+pbsv:
+  threads: 8
+  mem: 20g
+  min_sv_length: 20
+  discover_options: ''
+  call_options: --ccs
+tgs_variant_calling:
+  tool: DeepVariant
+  clair3:
+    model_path: ''
+    model_name: ''
+    threads: 16
+    mem: 20g
+    min_coverage: 2
+    min_mq: 5
+    chunk_size: 5000000
+    restrict_to_main_chroms: false
+    ctg_name: ''
+    options: --include_all_ctgs
+  deepvariant:
+    version: 1.9.0
+    container: ''
+    model_type: ''
+    threads: 16
+    mem: 30g
+    options: ''
+    num_shards: ''
+    tf_intra_threads: 1
+    tf_inter_threads: 1
+    omp_threads: 1
+    mkl_threads: ''
+    openblas_threads: ''
+tgs_variant_annotation:
+  tool: snpeff
+  snpeff:
+    genome: GRCh38.99
+    data_dir: ref_data/snpEff
+    threads: 4
+    mem: 10G
+    java_opts: -Xmx8G
+    options: -v
+  annovar:
+    buildver: hg38
+    database_dir: ref_data/annovar/humandb
+    protocol: refGene,avsnp150,clinvar_20221231,gnomad41_genome,dbnsfp42a
+    operation: g,f,f,f,f
+    options: -nastring . -polish
+    threads: 4
+    mem: 10G
+    annovar_path: bin/annovar/annovar
+tgs_joint_calling:
+  enabled: true
+  tool: glnexus
+  glnexus:
+    mem: 64G
+    threads: 16
+    preset: ''
+  genomicsdbimport:
+    mem: 4G
+    java_opts: -Xmx3g -Xms3g
+    batch_size: 50
+    reader_threads: 1
+  genotypegvcfs:
+    mem: 5G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx4G
+  gathervcfs:
+    mem: 25G
+    java_opts: -XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx20G
+  vcf_processing:
+    normalize:
+      options: -m -both
+    filtering:
+      max_missing: 0.95
+      hwe_threshold: 1.0e-06
+  phasing:
+    enabled: false
+    use_map: true
+    use_reference: false
+    threads: 8
+    pbwt_mac: 1
+    container: shapeit5
+    shapeit:
+      genetic_map: ref_data/phasing_resources/genetic_map/chr{chrom}.b38.gmap.gz
+      reference: ref_data/phasing_resources/1000g_phased/1kGP_high_coverage_Illumina.chr{chrom}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz
+chromosomes:
+- '1'
+- '2'
+- '3'
+- '4'
+- '5'
+- '6'
+- '7'
+- '8'
+- '9'
+- '10'
+- '11'
+- '12'
+- '13'
+- '14'
+- '15'
+- '16'
+- '17'
+- '18'
+- '19'
+- '20'
+- '21'
+- '22'
+- X
+- Y
+annotsv:
+  genome_build: GRCh37
+  sv_min_size: 30
+  annotations_dir: ref_data/AnnotSV_annotations
+  enabled: false
+configure_path: scripts/ngs_scripts/configure.v1
+ngs_scripts: scripts/ngs_scripts
+sv_pipeline_scripts: scripts/sv_pipeline_scripts
+cluster:
+  partition: ""
+  time: '24:00:00'
+tool_modules:
+  fastp_module: pipeline/fastp
+  fastqc_module: pipeline/fastqc
+  java_module: pipeline/java/openjdk-jdk
+  perl_module: pipeline/perl
+  bwa_module: pipeline/bwa
+  samblaster_module: pipeline/samblaster
+  sambamba_module: pipeline/sambamba
+  picard_module: pipeline/picard
+  gatk_module: pipeline/gatk4
+  samtools_module: pipeline/samtools
+  qualimap_module: pipeline/qualimap
+  verifybamid_module: pipeline/verifyBamID
+  bcftools_module: pipeline/bcftools
+  vcftools_module: pipeline/vcftools
+  multiqc_module: pipeline/multiqc
+  minimap2_module: pipeline/minimap2
+  nanoplot_module: pipeline/nanoplot
+  sniffles_module: pipeline/sniffles
+  cutesv_module: pipeline/cutesv
+  svim_module: pipeline/svim
+  nanovar_module: pipeline/nanovar
+  pbsv_module: pipeline/pbsv
+  survivor_module: pipeline/survivor
+  clair3_module: pipeline/clair3
+  deepvariant_module: pipeline/deepvariant
+  manta_module: pipeline/manta
+  smoove_module: pipeline/smoove
+  lumpy_module: pipeline/lumpy
+  tabix_module: pipeline/tabix
+  cnvpytor_module: pipeline/cnvpytor
+  gsort_module: pipeline/gsort
+  svtyper_module: pipeline/svtyper
+  speedseq_module: pipeline/speedseq
+containers:
+  qualimap: docker://quay.io/biocontainers/qualimap:2.3--hdfd78af_0
+  verifybamid2: docker://quay.io/biocontainers/verifybamid2:2.0.1--h345183b_12
+  perl_json: docker://quay.io/biocontainers/perl-archive-zip:1.68--pl5321hdfd78af_0
+  fastqc: docker://quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0
+  bwa_mem: docker://quay.io/biocontainers/bwa:0.7.19--h577a1d6_1
+  picard: docker://quay.io/biocontainers/picard:3.4.0--hdfd78af_0
+  gatk4: docker://quay.io/biocontainers/gatk4:4.6.2.0--py310hdfd78af_1
+  samtools: docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0
+  annotsv: docker://quay.io/biocontainers/annotsv:3.5.3--py313hdfd78af_0
+  fastp: docker://quay.io/biocontainers/fastp:0.24.3--heae3180_0
+  bcftools: docker://quay.io/biocontainers/bcftools:1.22--h3a4d415_1
+  vcftools: docker://quay.io/biocontainers/vcftools:0.1.16--pl5321h077b44d_12
+  shapeit5: docker://quay.io/biocontainers/shapeit5:5.1.1--h34261f4_2
+  snpeff: docker://quay.io/biocontainers/snpeff:5.2--hdfd78af_0
+  snpsift: docker://quay.io/biocontainers/snpsift:5.1d--hdfd78af_0
+  samblaster: docker://quay.io/biocontainers/samblaster:0.1.26--h9948957_7
+  sambamba: docker://quay.io/biocontainers/sambamba:1.0.1--he614052_4
+  manta: docker://quay.io/biocontainers/manta:1.6.0--py27h9948957_6
+  smoove: docker://brentp/smoove:v0.2.5
+  survivor: docker://quay.io/biocontainers/survivor:1.0.7--h077b44d_7
+  truvari: docker://quay.io/biocontainers/truvari:5.4.0--pyhdfd78af_0
+  cnvpytor: docker://quay.io/biocontainers/cnvpytor:1.3.1--pyhdfd78af_1
+  perl: docker://quay.io/biocontainers/perl:5.26--2
+  cyvcf2: docker://quay.io/biocontainers/cyvcf2:0.31.4--py310h4de444c_0
+  multiqc: docker://quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0
+  minimap2: docker://quay.io/biocontainers/minimap2:2.28--he4a0461_3
+  nanoplot: docker://quay.io/biocontainers/nanoplot:1.43.0--pyhdfd78af_1
+  sniffles: docker://quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0
+  cutesv: docker://quay.io/biocontainers/cutesv:2.1.1--pyhdfd78af_0
+  cutefc: docker://quay.io/biocontainers/cutefc:1.0.2--pyhdfd78af_0
+  svim: docker://quay.io/biocontainers/svim:2.0.0--pyhdfd78af_0
+  nanovar: docker://quay.io/biocontainers/nanovar:1.8.1--py39hbcbf7aa_1
+  pbsv: docker://quay.io/biocontainers/pbsv:2.11.0--h9ee0642_0
+  clair3: docker://hkubal/clair3:v1.2.0
+  glnexus: docker://quay.io/pacbio/glnexus:v1.4.3
+  minimap2_samtools: docker://quay.io/biocontainers/mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4:3161f532a5ea6f1dec9be5667c9efc2afdac6104-0
+hitsv:
+  chromosomes:
+  - chr1
+  - chr2
+  - chr3
+  - chr4
+  - chr5
+  - chr6
+  - chr7
+  - chr8
+  - chr9
+  - chr10
+  - chr11
+  - chr12
+  - chr13
+  - chr14
+  - chr15
+  - chr16
+  - chr17
+  - chr18
+  - chr19
+  - chr20
+  - chr21
+  - chr22
+  - chrX
+  - chrY
+  cache_dir: hitsv_cache
+  call_mem_mb: 16384
+  preprocess_mem_mb: 16384
+  lrs_preset: HIFI
+  hybrid:
+    enabled: true
+    sample_identities:
+      HG002_NA24385_son: HG002
+  srs_work_dir: ../shared/results/hitsv_work
+  srs_bams:
+    HG002_NA24385_son: data/hg002/ngs_30x/HG002_NA24385_son.dup.sorted.recal.bam
+  lrs_bams:
+    HG002: data/hg002/hifi_4x/HG002.pb.sorted.bam
+  repair_padding: true
+  invalid_allele_policy: quarantine
+samples_pairs_csv: "pairs.csv"

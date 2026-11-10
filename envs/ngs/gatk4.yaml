@@ -1,0 +1,9 @@
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - gatk4>=4.6,<=4.8
+  - openjdk>=8
+  - python>=3.8
+  - bcftools>=1.12

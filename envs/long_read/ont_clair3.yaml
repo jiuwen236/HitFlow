@@ -1,0 +1,12 @@
+name: ont_clair3
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.9
+  - clair3
+  - bcftools>=1.12
+  - make
+  - gcc
+  - tensorflow<2.16.1

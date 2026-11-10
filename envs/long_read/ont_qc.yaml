@@ -1,0 +1,8 @@
+name: ont_qc
+channels:
+  - defaults
+  - bioconda
+  - conda-forge
+dependencies:
+  - nanoplot>=1.42.0,<2
+  - python-kaleido 

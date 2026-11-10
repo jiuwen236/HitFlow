@@ -1,0 +1,41 @@
+[fastqc]
+Per base sequence quality       FAIL
+Per tile sequence quality       FAIL
+Per sequence quality scores     FAIL
+Per sequence GC content FAIL
+Per base N content      FAIL
+Sequence Length Distribution    WARN
+Sequence Duplication Levels     FAIL
+Overrepresented sequences       FAIL
+Adapter Content FAIL
+Qualification_rate_of_Q20       0.9
+Qualification_rate_of_Q30       0.8
+[end]
+
+
+[verifybamid]
+Contamination   0.05
+[end]
+
+
+
+[qualimap]
+Target_region_size	60000000
+Coverage_depth_after_deduplication	1
+Coverage_depth_on_1x	1
+Coverage_depth_on_10x	1
+Coverage_depth_on_20x	1
+Gc_content	30-60
+Duplication_rate	0.20
+Average_read_length	100
+[end]
+
+
+[Nanoplot]
+ave_percent_identity    85
+mean_read_length        10000
+median_percent_identity 90
+median_read_length      5000
+read_percent_of_Q10     50
+total_bases     3000000000
+[end]

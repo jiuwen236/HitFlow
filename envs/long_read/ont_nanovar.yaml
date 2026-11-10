@@ -1,0 +1,8 @@
+name: ont_nanovar
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - nanovar>=1.6,<2

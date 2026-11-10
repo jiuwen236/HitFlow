@@ -1,0 +1,615 @@
+# HG002 ONT (R10.4.1, ~30x, SUP v5.0.0) on GRCh38: ONT SNV/indel and SV
+# accuracy in the paper.
+# Recorded settings: last edited 2026-07-29.
+# Copied from the benchmark run; site-specific absolute paths were replaced
+# with relative ones (data/, ref_data/). Adjust paths before use.
+
+# ==================================================================================
+# WGS Pipeline Configuration (Reorganized for Verification)
+# ==================================================================================
+
+# ==================================================================================
+# PART 1: WORKFLOW CONTROL - Main switches to enable/disable pipeline components
+# ==================================================================================
+workflows:
+  # NGS (Next-Generation Sequencing) workflows
+  enable_basic_ngs_workflows: false          # FastQC, BWA, BQSR, QC, Variant Calling
+  enable_ngs_single_sample_filtering: false  # Single-sample variant filtering and annotation
+  enable_ngs_sv_detection: false             # Structural variant detection for single/multiple samples
+  enable_ngs_joint_calling: false            # Joint calling and population analysis
+
+  # TGS (Third-Generation Sequencing) workflows
+  enable_tgs_sv_detection: true             # Long read SV detection (ONT: Sniffles/cuteSV/SVIM/nanovar)
+  enable_tgs_variant_calling: true          # SNP/Indel variant calling (Clair3/DeepVariant)
+  enable_tgs_variant_annotation: false       # SNP/Indel variant annotation (snpEff/ANNOVAR)
+  enable_tgs_joint_calling: false            # Joint calling and VQSR for multiple samples
+  enable_tgs_phasing: false                  # Cohort-level phasing after joint calling
+
+  # Aggregate available QC/statistics reports with MultiQC
+  enable_multiqc: false
+
+
+# ==================================================================================
+# PART 2: INPUT/OUTPUT CONFIGURATION - Paths and directory structure
+# ==================================================================================
+
+# Reference genome
+reference:
+  genome: "ref_data/ref/grch38/GRCh38_full_analysis_set_plus_decoy_hla.fa"
+
+# Input data sources
+input_data:
+  base_dir: [""]  # Empty means current directory; use for relative input paths
+
+# Sample configuration files
+samples_csv: "samples_ngs.csv"  # NGS: sample, fq1, fq2
+samples_vcf_csv: "samples_vcf.csv"  # NGS: sample, raw_hc_dir
+samples_ont_csv: "samples_tgs.csv"  # TGS: sample, file_path
+
+# Optional directory scanning for automatic sample discovery
+scan_ngs_dirs: [""]  # Scan directories for NGS FASTQ/GVCF files, e.g., ["/mnt/data/fastq"]
+scan_tgs_dirs: [""]  # Scan directories for TGS FASTQ/BAM files, e.g., ["data/ont", "data/pacbio"]
+
+# Output directories - New hierarchical structure
+output:
+  # Root directory for all results
+  root: "results"
+  multiqc: "results/multiqc"
+
+  # NGS (Next-Generation Sequencing) outputs
+  ngs:
+    preprocessing: "results/ngs/preprocessing"
+    alignment: "results/ngs/alignment"
+    variants:
+      single_sample: "results/ngs/variants/single_sample"
+      cohort: "results/ngs/variants/cohort"
+    sv:
+      single_sample: "results/ngs/structural_variants/single_sample"
+      cohort: "results/ngs/structural_variants/cohort"
+    qc_reports: "results/ngs/qc_reports"
+
+  # TGS (Third-Generation Sequencing) outputs
+  tgs:
+    preprocessing: "results/tgs/preprocessing"
+    variants:
+      single_sample: "results/tgs/variants/single_sample"
+      cohort: "results/tgs/variants/cohort"
+    sv:
+      single_sample: "results/tgs/structural_variants/single_sample"
+      cohort: "results/tgs/structural_variants/cohort"
+    qc_reports: "results/tgs/qc_reports"
+
+  # Logs and temporary files
+  logs: "logs"
+  tmp: "tmp"
+
+# Legacy directory configurations (for backward compatibility reference - DO NOT USE)
+# directories:
+#   alignment: "alignment"  -> Use output.ngs.alignment
+#   final_dir: "final"  -> Use output.ngs.variants.single_sample or output.tgs.variants.single_sample
+#   joint_calling: "joint_calling"  -> Use output.ngs.variants.cohort
+#   qc_fastqc: "final/qc/fastqc"  -> Use output.ngs.preprocessing
+#   sv_detection: "sv_detection"  -> Use output.ngs.sv or output.tgs.sv
+#   logs: "logs"  -> Use output.logs
+#   tmp: "tmp"  -> Use output.tmp
+# qc_results_dir: "resultsdata/QC_pipeline"  -> Use output.ngs.qc_reports
+# failed_samples_dir: "resultsdata/failed_samples"  -> Use output.ngs.qc_reports/failed_samples
+# fail_log: "resultsdata/failed_samples.txt"  -> Use output.ngs.qc_reports/failed_samples.txt
+
+
+# ==================================================================================
+# PART 3: NGS PIPELINE CONFIGURATION
+# ==================================================================================
+
+# --- NGS Quality Control and Preprocessing ---
+fastp:
+  enabled: true
+  threads: 4
+  mem: "8g"
+  options: "-q 20 -u 30 -l 50 --trim_poly_g --detect_adapter_for_pe"
+
+fastqc:
+  threads: 2
+  mem: "5g"
+  options: "-k 7"
+
+# --- NGS Alignment ---
+bwa:
+  threads: 16
+  mem: "30g"
+  options: "-K 100000000 -Y"
+
+sambamba:
+  sort_mem: "40G"
+
+# --- NGS Base Quality Score Recalibration (BQSR) ---
+gatk:
+  known_sites_vcf: "ref_data/hg38_GATK/dbsnp_138.hg38.vcf.gz"
+
+gatk_paras:
+  mem_baserecalibrator_job: "7G"
+  java_opts_baserecalibrator: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx5G"
+  mem_applybqsr_job: "15G"
+  java_opts_applybqsr: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx10G"
+  static_quals: [10, 20, 30]
+  applybqsr_options: "--add-output-sam-program-record --use-original-qualities"
+
+  # HaplotypeCaller configuration
+  haplotypecaller:
+    mem: "15G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx10G"
+    contamination: 0
+    gqb_values: [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    annotations:
+      - "StandardAnnotation"
+      - "StandardHCAnnotation"
+      - "AS_StandardAnnotation"
+
+picard:
+  mem: "10G"
+  max_records: 250000
+  mem_merge_recal_bams_job: "20G"
+  java_opts_merge_recal_bams: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx10G"
+
+# --- NGS QC Tools ---
+verifybamid2:
+  enabled: true
+  svd_prefix: "ref_data/ref/verifybamid2/1000g.phase3.100k.b38.vcf.gz.dat"
+
+multiqc:
+  outdir: "results/multiqc"
+  filename: "multiqc_report.html"
+  title: "WGS Pipeline QC Report"
+  export_plots: true
+  # set to [] to let MultiQC auto-detect all modules.
+  modules: []
+  extra_args: "--interactive"
+
+# --- NGS WES Support (optional) ---
+wes:
+  targets_bed: ""           # e.g., data/wes_targets/Agilent_SureSelect_V7.hg38.bed; leave empty for WGS
+  interval_padding: 0
+
+# --- NGS Single-Sample Variant Filtering and Annotation ---
+ngs_single_sample_variants:
+  genotypegvcfs:
+    mem: "10G"
+    java_opts: "-Xmx8G -XX:ParallelGCThreads=1"
+
+  filtering:
+    snp_filters:
+      - "QD < 2.0"
+      - "FS > 60.0"
+      - "MQ < 40.0"
+      - "MQRankSum < -12.5"
+      - "ReadPosRankSum < -8.0"
+    indel_filters:
+      - "QD < 2.0"
+      - "FS > 200.0"
+      - "ReadPosRankSum < -20.0"
+
+  normalize:
+    options: "-m -both"
+
+  annotation:
+    tool: "funcotator"  # "funcotator" or "snpeff"
+
+    funcotator:
+      mem: "12G"
+      java_opts: "-Xmx10G -XX:ParallelGCThreads=1"
+      data_sources: "ref_data/funcotator_dataSources/funcotator_dataSources.v1.8.hg38.20230908g"
+      ref_version: "hg38"
+      transcript_selection_mode: "CANONICAL"
+      annotation_defaults: []
+      annotation_overrides: []
+      exclude_fields: []
+
+    snpeff:
+      mem: "10G"
+      java_opts: "-Xmx8G"
+      threads: 4
+      genome: "GRCh38.99"  # "GRCh37.75"
+      data_dir: "ref_data/snpEff"
+      options: ""
+
+# --- NGS Structural Variant Detection ---
+ngs_sv:
+  manta:
+    enabled: true
+
+  smoove:
+    enabled: true
+    exclude_regions: "ref_data/ref/grch38/ENCFF356LFX.bed.gz"
+
+  cnvpytor:
+    enabled: true
+    bin_size: 100
+    to_vcf_script: "scripts/sv_pipeline_scripts/cnvpytor_to_vcf.py"
+    ref_base: "."
+    vcf_reference_header: ""
+
+  survivor:
+    enable_population_merge: true
+    max_distance: 1000
+    min_support: 2
+    population_support: 2
+    min_length: 30
+
+# --- NGS Joint Calling ---
+joint_calling:
+  genomicsdbimport:
+    mem: "4G"
+    java_opts: "-Xmx3g -Xms3g"
+    batch_size: 50
+    reader_threads: 1
+
+  genotypegvcfs:
+    mem: "5G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx4G"
+
+  gathervcfs:
+    mem: "25G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx20G"
+
+# --- NGS VQSR (Variant Quality Score Recalibration) ---
+vqsr:
+  enabled: true
+  resources:
+    hapmap: "ref_data/vqsr_resources/hapmap_3.3.hg38.vcf.gz"
+    omni: "ref_data/vqsr_resources/1000G_omni2.5.hg38.vcf.gz"
+    1000g_snps: "ref_data/vqsr_resources/1000G_phase1.snps.high_confidence.hg38.vcf.gz"
+    dbsnp: "ref_data/hg38_GATK/dbsnp_138.hg38.vcf.gz"
+    mills_indels: "ref_data/vqsr_resources/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz"
+
+vqsr_paras:
+  snp_recalibration:
+    mem: "35G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx30G"
+    tranches: [100.0, 99.99, 99.98, 99.97, 99.96, 99.95, 99.9, 99.0]
+    annotations: ["QD", "MQ", "MQRankSum", "ReadPosRankSum", "FS", "SOR", "DP"]
+    max_gaussians: 8
+    ts_filter_level: 99.98
+
+  indel_recalibration:
+    mem: "35G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx30G"
+    tranches: [100.0, 99.99, 99.98, 99.97, 99.96, 99.95, 99.9, 99.0]
+    annotations: ["QD", "DP", "FS", "ReadPosRankSum"]
+    max_gaussians: 4
+    ts_filter_level: 99.9
+
+  applyvqsr:
+    mem: "5G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx4G"
+
+# --- NGS Phasing ---
+phasing:
+  enabled: true  # Set to true to enable (recommend >50 samples)
+  use_map: true
+  use_reference: true  # Use 1000G phased reference panel for improved phasing
+  skip_chromosomes: ["chrM", "chrY"]
+  shapeit:
+    genetic_map: "ref_data/phasing_resources/genetic_map/chr{chrom}.b38.gmap.gz"
+    reference: "ref_data/phasing_resources/1000g_phased/1kGP_high_coverage_Illumina.chr{chrom}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+
+phasing_paras:
+  shapeit:
+    threads: 8
+    pbwt_mac: 1
+
+# --- VCF Processing (NGS) ---
+vcf_processing:
+  normalize:
+    options: "-m -both"
+
+  filtering:
+    max_missing: 0.95
+    hwe_threshold: 0.000001
+
+
+# ==================================================================================
+# PART 4: TGS (THIRD-GENERATION SEQUENCING) PIPELINE CONFIGURATION
+# ==================================================================================
+
+# TGS Platform
+tgs_config:
+  platform: "ONT"  # "ONT" or "PACBIO_HIFI"
+
+  # --- TGS Structural Variant Detection ---
+  sv_detection:
+    sniffles:
+      enabled: true
+    cutesv:
+      enabled: true
+    svim:
+      enabled: true
+    nanovar:
+      enabled: true  # Valid for ONT only
+    pbsv:
+      enabled: true  # PacBio HiFi only
+    merge_per_sample: true
+    force_calling: true
+    population_merge: true
+
+  survivor:
+    max_distance: 1000
+    min_support: 1
+    population_support: 1
+    min_length: 50
+
+  # Per-sample multi-caller merge via truvari collapse (replaces SURVIVOR merge).
+  # See my_dev_docs/tgs/tgs_sv_merge_rootcause.md.
+  collapse:
+    pctseq: 0.7        # sequence similarity for clustering (match Truvari eval)
+    pctsize: 0.5       # size similarity for clustering
+    refdist: 500       # max reference distance between breakpoints
+    min_callers: 2     # keep variants supported by >= this many callers
+
+  sv_filter:
+    enabled: true
+    min_length: 50
+
+# --- TGS Read Mapping ---
+minimap2:
+  threads: 16
+  mem: "30g"
+  sort_mem: "3G"  # per-thread memory for samtools sort in streamed alignment (P1)
+  options: "-a -z 600,200 --MD -c -Y"  # Preset -x added based on platform
+
+nanoplot:
+  threads: 8
+  mem: "10g"
+  options: "--tsv_stats --info_in_report -f png --plots dot --legacy"
+
+# --- TGS SV Detection Tools ---
+sniffles:
+  threads: 8
+  mem: "15g"
+  min_support: 2
+  min_length: 30
+  options: ""
+
+cutesv:
+  threads: 16
+  mem: "20g"
+  min_support: 2
+  options: "--max_cluster_bias_INS 100 --diff_ratio_merging_INS 0.3 --max_cluster_bias_DEL 100 --diff_ratio_merging_DEL 0.3 --genotype"
+
+svim:
+  threads: 8
+  mem: "15g"
+  min_sv_size: 30
+  minimum_depth: 1
+  options: "--read_names"
+
+nanovar:
+  threads: 16
+  mem: "20g"
+  options: "-f hg38 --minlen 30"
+
+# pbsv (PacBio HiFi only) - optimized for CCS reads
+pbsv:
+  threads: 8
+  mem: "20g"
+  min_sv_length: 20
+  discover_options: ""  # Use --tandem-repeats <bed> for better tandem repeat detection if needed
+  call_options: "--ccs"  # Enable CCS mode for HiFi reads
+
+# --- TGS Variant Calling (SNP/Indel) ---
+tgs_variant_calling:
+  tool: "Clair3"  # "Default", "Clair3" or "DeepVariant". Default: auto-select based on platform (ONT->Clair3, PACBIO_HIFI->DeepVariant)
+
+  clair3:
+    # ONT R10.4.1 E8.2 400bps SUP, basecaller dorado v5.0.0 -> matching Clair3 model.
+    # Model ships inside the clair3:v1.2.0 container at /opt/models; no manual download needed.
+    model_path: ""  # If empty, resolve model_name under /opt/models (container) or $CONDA_PREFIX/bin/models
+    model_name: "r1041_e82_400bps_sup_v500"
+    threads: 16
+    mem: "20g"
+    min_coverage: 2
+    min_mq: 5
+    chunk_size: 5000000
+    # Restrict to main chromosomes (chr1-22,X,Y); matches GIAB confident regions and speeds up.
+    restrict_to_main_chroms: true
+    # Optional: explicitly set ctg list for --ctgName (comma-separated, no spaces).
+    # If empty and restrict_to_main_chroms=true, pipeline auto-detects chr-prefix via reference .fai.
+    ctg_name: ""
+    # Extra options passed to run_clair3.sh. Empty since we restrict contigs above.
+    options: ""
+
+  deepvariant:
+    version: "1.9.0"
+    container: ""
+    model_type: ""  # Auto-selected based on platform
+    threads: 16
+    mem: "30g"
+    options: ""
+    num_shards: ""
+    tf_intra_threads: 1
+    tf_inter_threads: 1
+    omp_threads: 1
+    mkl_threads: ""
+    openblas_threads: ""
+
+# --- TGS Variant Annotation ---
+tgs_variant_annotation:
+  tool: "snpeff"  # "snpeff" or "annovar"
+
+  snpeff:
+    genome: "GRCh38.99"
+    data_dir: "ref_data/snpEff"
+    threads: 4
+    mem: "10G"
+    java_opts: "-Xmx8G"
+    options: "-v"
+
+  annovar:
+    buildver: "hg38"
+    database_dir: "ref_data/annovar/humandb"
+    protocol: "refGene,avsnp150,clinvar_20221231,gnomad41_genome,dbnsfp42a"
+    operation: "g,f,f,f,f"
+    options: "-nastring . -polish"
+    threads: 4
+    mem: "10G"
+    annovar_path: "bin/annovar/annovar"
+
+# --- TGS Joint Calling and VQSR ---
+tgs_joint_calling:
+  enabled: true
+  tool: "glnexus"  # "glnexus" (recommended for Clair3/DeepVariant) or "gatk"
+
+  glnexus:
+    mem: "64G"
+    threads: 16
+    # GLnexus preset. Leave empty to auto-select based on variant calling tool:
+    #   clair3 -> "DeepVariant_unfiltered", deepvariant -> "DeepVariantWGS"
+    # Other options: "DeepVariant", "DeepVariant_unfiltered", "Clair3Glnexus", etc.
+    preset: ""
+
+  genomicsdbimport:
+    mem: "4G"
+    java_opts: "-Xmx3g -Xms3g"
+    batch_size: 50
+    reader_threads: 1
+
+  genotypegvcfs:
+    mem: "5G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx4G"
+
+  gathervcfs:
+    mem: "25G"
+    java_opts: "-XX:ParallelGCThreads=1 -Dsamjdk.buffer_size=4194304 -Xmx20G"
+
+  vcf_processing:
+    normalize:
+      options: "-m -both"
+    filtering:
+      max_missing: 0.95
+      hwe_threshold: 0.000001
+
+  phasing:
+    enabled: false
+    use_map: true
+    use_reference: false
+    threads: 8
+    pbwt_mac: 1
+    container: "shapeit5"  # Container key or URI for SHAPEIT5 phase_common
+    shapeit:
+      genetic_map: "ref_data/phasing_resources/genetic_map/chr{chrom}.b38.gmap.gz"
+      reference: "ref_data/phasing_resources/1000g_phased/1kGP_high_coverage_Illumina.chr{chrom}.filtered.SNV_INDEL_SV_phased_panel.vcf.gz"
+
+
+# ==================================================================================
+# PART 5: SHARED CONFIGURATION - Settings used across multiple workflows
+# ==================================================================================
+
+# Chromosomes for scatter-gather processing
+# chromosomes: ["chrN"]
+# chromosomes: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y", "MT"]
+chromosomes: ["chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", "chr9", "chr10", "chr11", "chr12", "chr13", "chr14", "chr15", "chr16", "chr17", "chr18", "chr19", "chr20", "chr21", "chr22", "chrX", "chrY", "chrM"]
+
+# AnnotSV configuration (for SV annotation)
+annotsv:
+  genome_build: GRCh38
+  sv_min_size: 30
+  annotations_dir: ref_data/AnnotSV_annotations
+
+# Script paths
+configure_path: "scripts/ngs_scripts/configure.v1"  # WES: configure.wes
+ngs_scripts: "scripts/ngs_scripts"
+sv_pipeline_scripts: "scripts/sv_pipeline_scripts"
+
+# Cluster configuration
+cluster:
+  partition: ""
+  time: "144:00:00"
+
+
+# ==================================================================================
+# PART 6: TOOL MODULES - Environment module names (if using module load system)
+# ==================================================================================
+tool_modules:
+  # NGS tools
+  fastp_module: "pipeline/fastp"
+  fastqc_module: "pipeline/fastqc"
+  java_module: "pipeline/java/openjdk-jdk"
+  perl_module: "pipeline/perl"
+  bwa_module: "pipeline/bwa"
+  samblaster_module: "pipeline/samblaster"
+  sambamba_module: "pipeline/sambamba"
+  picard_module: "pipeline/picard"
+  gatk_module: "pipeline/gatk4"
+  samtools_module: "pipeline/samtools"
+  qualimap_module: "pipeline/qualimap"
+  verifybamid_module: "pipeline/verifyBamID"
+  bcftools_module: "pipeline/bcftools"
+  vcftools_module: "pipeline/vcftools"
+  multiqc_module: "pipeline/multiqc"
+
+  # TGS tools
+  minimap2_module: "pipeline/minimap2"
+  nanoplot_module: "pipeline/nanoplot"
+  sniffles_module: "pipeline/sniffles"
+  cutesv_module: "pipeline/cutesv"
+  svim_module: "pipeline/svim"
+  nanovar_module: "pipeline/nanovar"
+  pbsv_module: "pipeline/pbsv"
+  survivor_module: "pipeline/survivor"
+  clair3_module: "pipeline/clair3"
+  deepvariant_module: "pipeline/deepvariant"
+
+  # NGS SV tools
+  manta_module: "pipeline/manta"
+  smoove_module: "pipeline/smoove"
+  lumpy_module: "pipeline/lumpy"
+  tabix_module: "pipeline/tabix"
+  cnvpytor_module: "pipeline/cnvpytor"
+  gsort_module: "pipeline/gsort"
+  svtyper_module: "pipeline/svtyper"
+  speedseq_module: "pipeline/speedseq"
+
+
+# ==================================================================================
+# PART 7: CONTAINER CONFIGURATION - Docker/Singularity container images
+# ==================================================================================
+containers:
+  qualimap: "docker://quay.io/biocontainers/qualimap:2.3--hdfd78af_0"
+  verifybamid2: "docker://quay.io/biocontainers/verifybamid2:2.0.1--h345183b_12"
+  perl_json: "docker://quay.io/biocontainers/perl-archive-zip:1.68--pl5321hdfd78af_0"
+  fastqc: "docker://quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0"
+  bwa_mem: "docker://quay.io/biocontainers/bwa:0.7.19--h577a1d6_1"
+  picard: "docker://quay.io/biocontainers/picard:3.4.0--hdfd78af_0"
+  gatk4: "docker://quay.io/biocontainers/gatk4:4.6.2.0--py310hdfd78af_1"
+  samtools: "docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0"
+  annotsv: "docker://quay.io/biocontainers/annotsv:3.5.3--py313hdfd78af_0"
+  fastp: "docker://quay.io/biocontainers/fastp:0.24.3--heae3180_0"
+  bcftools: "docker://quay.io/biocontainers/bcftools:1.22--h3a4d415_1"
+  vcftools: "docker://quay.io/biocontainers/vcftools:0.1.16--pl5321h077b44d_12"
+  shapeit5: "docker://quay.io/biocontainers/shapeit5:5.1.1--h34261f4_2"
+  snpeff: "docker://quay.io/biocontainers/snpeff:5.2--hdfd78af_0"
+  snpsift: "docker://quay.io/biocontainers/snpsift:5.1d--hdfd78af_0"  # SnpSift for VCF filtering and extraction
+  samblaster: "docker://quay.io/biocontainers/samblaster:0.1.26--h9948957_7"
+  sambamba: "docker://quay.io/biocontainers/sambamba:1.0.1--he614052_4"
+  manta: "docker://quay.io/biocontainers/manta:1.6.0--py27h9948957_6"
+  smoove: "docker://brentp/smoove:v0.2.5"
+  survivor: "docker://quay.io/biocontainers/survivor:1.0.7--h077b44d_7"
+  truvari: "docker://quay.io/biocontainers/truvari:5.4.0--pyhdfd78af_0"  # multi-caller SV collapse/merge
+  cnvpytor: "docker://quay.io/biocontainers/cnvpytor:1.3.1--pyhdfd78af_1"
+  perl: "docker://quay.io/biocontainers/perl:5.26--2"
+  cyvcf2: "docker://quay.io/biocontainers/cyvcf2:0.31.4--py310h4de444c_0"  # python3 + bgzip + tabix
+  multiqc: "docker://quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0"
+
+  # TGS SV detection and variant calling tools
+  minimap2: "docker://quay.io/biocontainers/minimap2:2.28--he4a0461_3"
+  # Combined minimap2+samtools image for streamed alignment (minimap2 | samtools sort).
+  minimap2_samtools: "docker://quay.io/biocontainers/mulled-v2-66534bcbb7031a148b13e2ad42583020b9cd25c4:3161f532a5ea6f1dec9be5667c9efc2afdac6104-0"  # pinned local SIF (mulled minimap2 2.28 + samtools 1.20)
+  nanoplot: "docker://quay.io/biocontainers/nanoplot:1.43.0--pyhdfd78af_1"
+  sniffles: "docker://quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
+  cutesv: "docker://quay.io/biocontainers/cutesv:2.1.1--pyhdfd78af_0"
+  cutefc: "docker://quay.io/biocontainers/cutefc:1.0.2--pyhdfd78af_0"
+  svim: "docker://quay.io/biocontainers/svim:2.0.0--pyhdfd78af_0"
+  nanovar: "docker://quay.io/biocontainers/nanovar:1.8.1--py39hbcbf7aa_1"
+  pbsv: "docker://quay.io/biocontainers/pbsv:2.11.0--h9ee0642_0"
+  clair3: "docker://hkubal/clair3:v1.2.0"  # pinned local SIF (Docker Hub unreachable); bundles /opt/models/r1041_e82_400bps_sup_v500
+  glnexus: "docker://quay.io/pacbio/glnexus:v1.4.3"
+

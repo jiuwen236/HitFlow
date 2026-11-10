@@ -1,0 +1,11 @@
+name: ngs_sv_count_lumpy
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - bcftools>=1.12
+  - htslib
+  - samtools>=1.14
+  - bash 

@@ -1,0 +1,2 @@
+sample,fq1,fq2
+HG002_NA24385_son,"data/hg002/NIST_Illumina/D1_S1_L00{1,2}_R1_*.fastq.gz","data/hg002/NIST_Illumina/D1_S1_L00{1,2}_R2_*.fastq.gz"

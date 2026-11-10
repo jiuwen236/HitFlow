@@ -1,0 +1,90 @@
+# ==================================================================================
+# HitFlow environment check
+# ==================================================================================
+# Checks that Snakemake can deploy and run tools through Conda or containers.
+# No samples, reference genome or other data are needed. Run from the HitFlow root:
+#   snakemake --configfile config/env_check.yaml --profile profiles/local-conda --cores 2
+#   snakemake --configfile config/env_check.yaml --profile profiles/local-apptainer --cores 2
+#   snakemake --configfile config/env_check.yaml --profile profiles/slurm-conda
+# Result: results/env_check/report.tsv. The first run downloads the selected Conda
+# environments or container images.
+
+env_check:
+  # Available: bcftools, samtools, fastp, fastqc, gatk4, multiqc,
+  #            minimap2, sniffles, cutesv, truvari
+  tools: ["bcftools", "fastp", "minimap2"]
+
+workflows:
+  enable_env_check: true
+  enable_basic_ngs_workflows: false
+  enable_ngs_single_sample_filtering: false
+  enable_ngs_sv_detection: false
+  enable_ngs_joint_calling: false
+  enable_tgs_sv_detection: false
+  enable_tgs_variant_calling: false
+  enable_tgs_variant_annotation: false
+  enable_tgs_joint_calling: false
+  enable_tgs_phasing: false
+  enable_multiqc: false
+
+# Container images used when the deployment method is apptainer.
+containers:
+  bcftools: "docker://quay.io/biocontainers/bcftools:1.22--h3a4d415_1"
+  samtools: "docker://quay.io/biocontainers/samtools:1.20--h50ea8bc_0"
+  fastp: "docker://quay.io/biocontainers/fastp:0.24.3--heae3180_0"
+  fastqc: "docker://quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0"
+  gatk4: "docker://quay.io/biocontainers/gatk4:4.6.2.0--py310hdfd78af_1"
+  multiqc: "docker://quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0"
+  minimap2: "docker://quay.io/biocontainers/minimap2:2.28--he4a0461_3"
+  sniffles: "docker://quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
+  cutesv: "docker://quay.io/biocontainers/cutesv:2.1.1--pyhdfd78af_0"
+  truvari: "docker://quay.io/biocontainers/truvari:5.4.0--pyhdfd78af_0"
+
+# ==================================================================================
+# Settings required to load the workflow; normally no changes are needed.
+# ==================================================================================
+reference:
+  genome: ""
+
+input_data:
+  base_dir: [""]
+
+samples_csv: ""
+samples_ont_csv: ""
+scan_ngs_dirs: []
+scan_tgs_dirs: []
+
+output:
+  root: "results"
+  ngs:
+    preprocessing: "results/ngs/preprocessing"
+    alignment: "results/ngs/alignment"
+    variants:
+      single_sample: "results/ngs/variants/single_sample"
+      cohort: "results/ngs/variants/cohort"
+    sv:
+      single_sample: "results/ngs/structural_variants/single_sample"
+      cohort: "results/ngs/structural_variants/cohort"
+    qc_reports: "results/ngs/qc_reports"
+  tgs:
+    preprocessing: "results/tgs/preprocessing"
+    variants:
+      single_sample: "results/tgs/variants/single_sample"
+      cohort: "results/tgs/variants/cohort"
+    sv:
+      single_sample: "results/tgs/structural_variants/single_sample"
+      cohort: "results/tgs/structural_variants/cohort"
+    qc_reports: "results/tgs/qc_reports"
+  logs: "logs"
+  tmp: "tmp"
+
+chromosomes: []
+
+verifybamid2:
+  enabled: false
+
+vqsr:
+  enabled: false
+
+phasing:
+  enabled: false

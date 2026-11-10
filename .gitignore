@@ -1,0 +1,44 @@
+# Local development and private material
+__*
+!__init__.py
+my-*
+my_*
+MY-*
+AGENTS.md
+MY-AGENTS.md
+20[0-9][0-9]/
+# Runtime files and downloaded software
+.snakemake/
+.cache/
+.conda/
+__pycache__/
+*.pyc
+bin/
+scripts/bin/
+/data/
+ref_data/
+results/
+logs/
+logs_cluster*/
+benchmarks/
+tmp/
+*.sif
+*.bam
+*.bai
+*.cram
+*.crai
+*.fastq*
+*.fq*
+*.vcf*
+*.bcf
+*.tbi
+*.csi
+*.out
+*.log
+# Credentials and editor settings
+.env
+.env.*
+*.pem
+*.key
+.vscode/
+.idea/
