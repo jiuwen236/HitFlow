@@ -127,6 +127,11 @@ if config["workflows"].get("enable_tgs_sv_detection", False) or config["workflow
 if config["workflows"].get("enable_cross_platform_sv", False):
     include: "rules/cross_platform_sv.smk"
 
+# Cohort-level cross-platform SV integration (opt-in): short-read cohort VCF + long-read
+# cohort VCF -> one site catalogue with per-platform support and allele frequencies.
+if config["workflows"].get("enable_cross_platform_sv_cohort", False):
+    include: "rules/cross_platform_sv_cohort.smk"
+
 if config["workflows"].get("enable_multiqc", False):
     include: "rules/multiqc.smk"
 
@@ -149,6 +154,7 @@ rule all:
         get_tgs_annotation_outputs_wrapper() if config["workflows"].get("enable_tgs_variant_annotation", False) else [],
         get_tgs_joint_calling_outputs() if config["workflows"].get("enable_tgs_joint_calling", False) else [],
         get_cross_platform_sv_outputs() if config["workflows"].get("enable_cross_platform_sv", False) else [],
+        get_cross_platform_sv_cohort_outputs(),
         get_multiqc_outputs() if config["workflows"].get("enable_multiqc", False) else [],
         f"{ENV_CHECK_DIR}/report.tsv" if config["workflows"].get("enable_env_check", False) else [],
         get_hitsv_outputs()

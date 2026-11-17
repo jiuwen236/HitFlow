@@ -610,3 +610,31 @@ rule normalize_filtered_vcf:
         # Index the output VCF
         bcftools index --tbi --force {output.vcf}
         """
+
+
+# S09: Summary statistics of the filtered, normalized VCF for MultiQC
+rule ngs_filtered_vcf_stats:
+    input:
+        vcf = f"{NGS_VARIANTS_SINGLE_DIR}/{{sample_id}}/variant_calling/normalized/{{sample_id}}.filtered.normalized.vcf.gz",
+        idx = f"{NGS_VARIANTS_SINGLE_DIR}/{{sample_id}}/variant_calling/normalized/{{sample_id}}.filtered.normalized.vcf.gz.tbi"
+    output:
+        stats = f"{NGS_VARIANTS_SINGLE_DIR}/{{sample_id}}/variant_calling/normalized/{{sample_id}}.filtered.normalized.stats.txt"
+    threads: 1
+    resources:
+        mem_mb = 2048,
+        partition = config["cluster"]["partition"],
+        time = config["cluster"]["time"]
+    envmodules:
+        config["tool_modules"]["bcftools_module"]
+    conda:
+        ENV_BCFTOOLS
+    container:
+        CONTAINER_BCFTOOLS
+    benchmark:
+        f"{LOGS_DIR}/benchmarks/single_sample_filtering/{{sample_id}}.stats.tsv"
+    log:
+        f"{LOGS_DIR}/single_sample_filtering/{{sample_id}}.stats.log"
+    shell:
+        """
+        bcftools stats {input.vcf} > {output.stats} 2> {log}
+        """

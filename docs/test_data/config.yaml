@@ -1,6 +1,7 @@
-# Small short-read test; see docs/test_data.md.
+# Small short-read + HiFi test; see docs/test_data.md.
 #
-# Data: GIAB HG002 (NA24385) Illumina 2x250 bp, read pairs from chr20:63.0-63.5 Mb.
+# Data: GIAB HG002 (NA24385) Illumina 2x250 bp read pairs and PacBio HiFi reads
+# (about 4x) from chr20:61.0 Mb-end.
 # Reference: GRCh38 chr20 only, prepared by scripts/pipeline/prepare_test_data.sh.
 # The first part is the HG002 HiFi benchmark configuration
 # (config/examples/hg002_hifi_grch38/config.yaml). The block at the end
@@ -629,11 +630,12 @@ workflows:
   enable_ngs_single_sample_filtering: true
   enable_ngs_sv_detection: true
   enable_ngs_joint_calling: false
-  enable_tgs_sv_detection: false
+  enable_tgs_sv_detection: true
   enable_tgs_variant_calling: false
   enable_tgs_variant_annotation: false
   enable_tgs_joint_calling: false
   enable_tgs_phasing: false
+  enable_cross_platform_sv: true
   enable_multiqc: true
 
 # chr20 only; the FASTA index, dictionary and BWA index are built by the workflow.
@@ -642,7 +644,10 @@ reference:
 
 samples_csv: "samples_ngs.csv"
 samples_vcf_csv: ""
-samples_ont_csv: ""
+samples_ont_csv: "samples_tgs.csv"
+# Links the short-read and HiFi samples of HG002 for HitSV Hybrid and the
+# callset-level integration (enable_cross_platform_sv).
+samples_pairs_csv: "pairs.csv"
 scan_ngs_dirs: []
 scan_tgs_dirs: []
 
@@ -671,11 +676,71 @@ ngs_sv:
     exclude_regions: ""
   cnvpytor:
     enabled: false
+  hitsv:
+    enabled: true
 
-# Small resource requests for about 63,000 read pairs.
+# HiFi SV callers plus HitSV; NanoVar is for ONT only.
+tgs_config:
+  sv_detection:
+    nanovar:
+      enabled: false
+    hitsv:
+      enabled: true
+
+# HitSV short-read, long-read and Hybrid calling (bin/HitSV, see the README).
+hitsv:
+  lrs_preset: "HIFI"
+  call_mem_mb: 8192
+  preprocess_mem_mb: 4096
+  # As in config/examples/hg002_hybrid_sv: repair shifted padding bases and set
+  # aside alleles that cannot be checked against the reference (counted in
+  # results/hitsv_work/*/*/vcf_audit.json) instead of stopping the run.
+  repair_padding: true
+  invalid_allele_policy: "quarantine"
+  hybrid:
+    enabled: true
+    # Both samples are HG002 (their BAM SM tags are the sample IDs).
+    sample_identities:
+      HG002_HiFi: HG002
+
+# Small resource requests for the test region.
 bwa:
   threads: 4
   mem: "10g"
 
 sambamba:
   sort_mem: "4G"
+
+qualimap:
+  threads: 2
+  mem: "4g"
+
+# PNG/SVG/PDF export can hang on some compute nodes; the HTML report keeps
+# the interactive plots.
+multiqc:
+  export_plots: false
+
+minimap2:
+  threads: 4
+  mem: "10g"
+  sort_mem: "1G"
+
+nanoplot:
+  threads: 2
+  mem: "4g"
+
+sniffles:
+  threads: 4
+  mem: "8g"
+
+cutesv:
+  threads: 4
+  mem: "8g"
+
+svim:
+  threads: 2
+  mem: "8g"
+
+pbsv:
+  threads: 4
+  mem: "8g"

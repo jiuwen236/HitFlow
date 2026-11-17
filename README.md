@@ -18,7 +18,7 @@ Modules are organised by analysis task rather than by sequencing platform, and t
 | SV calling | Manta, smoove/LUMPY; optional CNVpytor and HitSV | Sniffles2, cuteSV, SVIM, NanoVar (ONT) or PBSV (HiFi); optional HitSV |
 | Per-sample SV merging | SURVIVOR (default) or Truvari collapse | Truvari collapse (default) or SURVIVOR |
 | Cohort small variants | GATK GenomicsDBImport and GenotypeGVCFs; optional VQSR | GLnexus (default) or GATK |
-| Cohort SVs | SURVIVOR | cuteFC force calling, then SURVIVOR |
+| Cohort SVs | SURVIVOR (default) or svtools with SVTyper re-genotyping | cuteFC force calling, then SURVIVOR |
 | Phasing | SHAPEIT5 (statistical) | SHAPEIT5 (statistical) |
 | Annotation | Funcotator or snpEff; AnnotSV for SVs | snpEff or ANNOVAR; AnnotSV for SVs |
 | Reporting | MultiQC | MultiQC; per-sample NanoPlot reports |
@@ -46,6 +46,7 @@ For individuals sequenced with both technologies, HitSV Hybrid calls SVs from th
 | SHAPEIT5 | 5.1.1 | snpEff / SnpSift | 5.2 / 5.1d |
 | BCFtools | 1.22 | SAMtools | 1.20 |
 | VCFtools | 0.1.16 | MultiQC | 1.33 |
+| svtools | 0.4.0 | SVTyper | 0.7.0 |
 
 ANNOVAR is not distributed with HitFlow; obtain it from the [ANNOVAR website](https://annovar.openbioinformatics.org/) under its own license.
 
@@ -127,10 +128,24 @@ As an alternative to profiles, `scripts/run_snakemake.sh` wraps the same options
 | `enable_tgs_joint_calling` | Long-read cohort joint genotyping |
 | `enable_tgs_phasing` | Phasing of long-read cohort calls (also set `tgs_joint_calling.phasing.enabled`) |
 | `enable_cross_platform_sv` | Comparison of short- and long-read SV calls from paired samples |
+| `enable_cross_platform_sv_cohort` | Integration of a short-read and a long-read cohort SV VCF into one site catalogue (`cross_platform_sv_cohort`) |
 | `enable_multiqc` | MultiQC report |
 | `enable_env_check` | Environment check only |
 
 The long-read platform is set once per run with `tgs_config.platform` (`ONT` or `PACBIO_HIFI`). HitSV is off by default. To use it, add the keys from `config/hitsv.yaml` to your configuration; [config/examples/hg002_hybrid_sv/](config/examples/hg002_hybrid_sv/) shows a complete Hybrid setup. HitFlow merges repeated top-level keys in its YAML files, so you can append such an overlay to the end of `config.yaml`.
+
+- **Short-read cohort SVs:** set `ngs_sv.cohort_merge_method: svtools` to use
+  Smoove/LUMPY calls and re-genotype the merged sites with SVTyper. This requires
+  `ngs_sv.smoove.enabled: true` and `ngs_sv.survivor.enable_population_merge: true`;
+  the default `survivor` method merges the per-sample multi-caller call sets.
+- **Paired cross-platform SVs:** `cross_platform_sv.method` selects `survivor`
+  (default) or `truvari` for `enable_cross_platform_sv`.
+- **Cross-platform cohort SVs:** enable `workflows.enable_cross_platform_sv_cohort`
+  and set `cross_platform_sv_cohort.method` to `survivor` (default) or `truvari`.
+  Inputs default to this run's short- and long-read cohort outputs; alternatively,
+  set `cross_platform_sv_cohort.ngs_vcf` and `tgs_vcf` to existing cohort VCFs with
+  genotypes. Both must use the same reference assembly and chromosome names. The
+  cohorts may contain different individuals; `samples_pairs_csv` is not required.
 
 ### Input
 

@@ -34,7 +34,7 @@ containers:
   fastp: "docker://quay.io/biocontainers/fastp:0.24.3--heae3180_0"
   fastqc: "docker://quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0"
   gatk4: "docker://quay.io/biocontainers/gatk4:4.6.2.0--py310hdfd78af_1"
-  multiqc: "docker://quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0"
+  multiqc: "docker://quay.io/biocontainers/multiqc:1.35--pyhdfd78af_2"
   minimap2: "docker://quay.io/biocontainers/minimap2:2.28--he4a0461_3"
   sniffles: "docker://quay.io/biocontainers/sniffles:2.4--pyhdfd78af_0"
   cutesv: "docker://quay.io/biocontainers/cutesv:2.1.1--pyhdfd78af_0"

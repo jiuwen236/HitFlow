@@ -107,7 +107,7 @@ the snpEff HIGH impact class.
 | `results/tgs/structural_variants/single_sample/{sample}/final/{sample}.sv.final.vcf.gz` | Final per-sample SVs (force-called if enabled) |
 | `results/tgs/structural_variants/single_sample/{sample}/annotation/{sample}.tgs_survivor.annotsv.tsv` | AnnotSV annotation of the merged SVs (the file name is kept for compatibility, also for Truvari merging) |
 | `results/tgs/structural_variants/single_sample/{sample}/annotation/{sample}.cuteFC.annotsv.tsv` | AnnotSV annotation of the force-called SVs |
-| `results/tgs/structural_variants/cohort/population.merged.vcf` | Cohort SV merge |
+| `results/tgs/structural_variants/cohort/population.merged.vcf` | Cohort SV merge, keeping only sites carried by at least one sample (`tgs_config.survivor.drop_non_carrier_sites`) |
 
 ## Hybrid and cross-platform SVs
 
@@ -121,6 +121,19 @@ the snpEff HIGH impact class.
 In the merged VCF, `SUPP_VEC` is `11` (both), `10` (short reads only) or `01`
 (long reads only). The comparison is a union merge with relaxed type matching;
 it is not an accuracy measure.
+
+| File | Content |
+| --- | --- |
+| `results/cross_platform/cohort_sv/cohort.cross_sv.vcf.gz` | Site-only catalogue integrating the short- and long-read cohort SV VCFs |
+| `results/cross_platform/cohort_sv/cohort.cross_sv.summary.tsv` | Site counts by platform support and SV type |
+
+Each catalogue site has `PLATFORM` (`both`, `short_only`, `long_only`), `SUPP_VEC`
+(`NGS`,`TGS` order), and `NGS_AF`/`TGS_AF` with `AC`/`AN` from the cohort in which
+it was found. The cohorts may contain different individuals, so the catalogue has no
+genotype columns. If several sites from one cohort collapse into one catalogue
+record, its AF/AC/AN come from the input site with the highest AF, not from
+re-genotyping the combined site. Size/type filtering can exclude input sites;
+SURVIVOR may also retain only one source ID for nearby sites in the same cohort.
 
 ## Logs and resource records
 

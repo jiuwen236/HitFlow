@@ -24,6 +24,10 @@ SURV_POP_SUPPORT = _SURV_CFG.get("population_support", 2)
 SURV_MAX_DISTANCE = _SURV_CFG.get("max_distance", 1000)
 SURV_MIN_LENGTH = _SURV_CFG.get("min_length", 50)
 PRE_FORCE_SUPPORT = 1  # Minimal support for pre-force population merge (union of sites)
+# cuteFC writes a record for every candidate site in every sample (0/0 when rejected), and
+# SURVIVOR counts records rather than alleles, so the population merge keeps sites that no
+# sample carries. Drop them unless explicitly disabled.
+SURV_DROP_NON_CARRIER = _SURV_CFG.get("drop_non_carrier_sites", True)
 
 SV_FILTER_ENABLED = config["tgs_config"].get("sv_filter", {}).get("enabled", True)
 
@@ -259,7 +263,7 @@ rule merge_population_variants:
                                  sample=get_ont_samples())
     output:
         merge_list = f"{TGS_SV_COHORT_DIR}/population_merge_files.txt",
-        merged_vcf = f"{TGS_SV_COHORT_DIR}/population.merged.vcf"
+        merged_vcf = temp(f"{TGS_SV_COHORT_DIR}/population.merged.raw.vcf")
     params:
         max_distance = SURV_MAX_DISTANCE,
         population_support = SURV_POP_SUPPORT,
@@ -292,6 +296,38 @@ rule merge_population_variants:
             {output.merge_list} \
             {params.max_distance} {params.population_support} 1 1 0 {params.min_length} \
             {output.merged_vcf} 2> {log}
+        """
+
+# S11b: Drop sites without any carrier and sort the population VCF (SURVIVOR output is unsorted)
+rule filter_population_variants:
+    input:
+        merged_vcf = f"{TGS_SV_COHORT_DIR}/population.merged.raw.vcf"
+    output:
+        merged_vcf = f"{TGS_SV_COHORT_DIR}/population.merged.vcf"
+    params:
+        carrier_opt = "-i 'GT=\"alt\"'" if SURV_DROP_NON_CARRIER else ""
+    resources:
+        mem_mb = 8192,
+        partition = config["cluster"]["partition"],
+        time = config["cluster"]["time"]
+    envmodules:
+        config["tool_modules"]["bcftools_module"]
+    conda:
+        CONDA_BCFTOOLS_ENV
+    container:
+        config["containers"]["bcftools"]
+    log:
+        f"{LOGS_DIR}/survivor_population/population_filter.log"
+    shell:
+        """
+        set -o pipefail
+        TMP=$(dirname {output.merged_vcf})/population_filter_tmp
+        rm -rf "$TMP"; mkdir -p "$TMP"
+        bcftools view {params.carrier_opt} -Ou {input.merged_vcf} 2> {log} \\
+            | bcftools sort -T "$TMP" -Ov -o {output.merged_vcf} 2>> {log}
+        rm -rf "$TMP"
+        echo "Sites before: $(grep -vc '^#' {input.merged_vcf} || true)" >> {log}
+        echo "Sites after:  $(grep -vc '^#' {output.merged_vcf} || true)" >> {log}
         """
 
 FINAL_SV_VCF = f"{TGS_SV_SINGLE_DIR}/{{sample}}/final/{{sample}}.sv.final.vcf.gz"

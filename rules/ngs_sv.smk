@@ -73,10 +73,19 @@ SURV_POP_SUPPORT = _SURVIVOR_NGS_CFG.get("population_support", 2)
 SURV_ENABLE_POP_MERGE = _SURVIVOR_NGS_CFG.get("enable_population_merge", True)
 
 # Per-sample multi-caller merge method: "survivor" (default) or "truvari" (truvari collapse).
-# Both produce {sample}.ngs_sv.merged.vcf.gz; the cohort-level merge always uses SURVIVOR.
+# Both produce {sample}.ngs_sv.merged.vcf.gz.
 NGS_SV_MERGE_METHOD = str(config.get("ngs_sv", {}).get("merge_method", "survivor")).lower()
 if NGS_SV_MERGE_METHOD not in ("survivor", "truvari"):
     raise ValueError(f"ngs_sv.merge_method must be 'survivor' or 'truvari', got '{NGS_SV_MERGE_METHOD}'")
+
+# Cohort-level merge method: "survivor" (default) merges the per-sample multi-caller VCFs;
+# "svtools" merges Smoove calls and re-genotypes every sample at the merged sites
+# (rules/ngs_sv_cohort_svtools.smk). Both produce cohort.ngs_sv.merged.vcf.gz.
+NGS_SV_COHORT_MERGE_METHOD = str(config.get("ngs_sv", {}).get("cohort_merge_method", "survivor")).lower()
+if NGS_SV_COHORT_MERGE_METHOD not in ("survivor", "svtools"):
+    raise ValueError(f"ngs_sv.cohort_merge_method must be 'survivor' or 'svtools', got '{NGS_SV_COHORT_MERGE_METHOD}'")
+if NGS_SV_COHORT_MERGE_METHOD == "svtools" and not config.get("ngs_sv", {}).get("smoove", {}).get("enabled", True):
+    raise ValueError("ngs_sv.cohort_merge_method 'svtools' requires ngs_sv.smoove.enabled: true")
 
 # truvari collapse parameters for NGS SV. Short-read calls are mostly symbolic
 # (no inserted sequence), so sequence similarity is ignored by default.
@@ -1022,6 +1031,9 @@ rule ngs_sv_survivor_population_merge:
         rm -rf $(dirname {output.merged_vcf_gz})/decompressed 2>/dev/null || true
         """
 
+if NGS_SV_COHORT_MERGE_METHOD == "svtools":
+    include: "ngs_sv_cohort_svtools.smk"
+
 # Aggregate per-sample SV targets for convenience
 
 def ngs_sv_final_outputs():
@@ -1059,8 +1071,11 @@ def ngs_sv_final_outputs():
                     f"{NGS_SV_SINGLE_DIR}/{s}/cnvpytor/{s}.cnvpytor.vcf.gz",
                     f"{NGS_SV_SINGLE_DIR}/{s}/cnvpytor/{s}.cnvpytor.vcf.gz.tbi",
                 ])
-    # Add population/cohort-level merged outputs only if enabled and we have at least one sample
-    if SURV_ENABLE_POP_MERGE and config.get("ngs_sv", {}).get("merge_per_sample", True) and len(get_ngs_samples()) > 0:
+    # Add population/cohort-level merged outputs only if enabled and we have at least one sample.
+    # SURVIVOR consumes the per-sample merged VCFs; svtools consumes the Smoove VCFs.
+    cohort_inputs_ready = (NGS_SV_COHORT_MERGE_METHOD == "svtools"
+                           or config.get("ngs_sv", {}).get("merge_per_sample", True))
+    if SURV_ENABLE_POP_MERGE and cohort_inputs_ready and len(get_ngs_samples()) > 0:
         outs.extend([
             f"{NGS_SV_COHORT_DIR}/merged/cohort.ngs_sv.merged.vcf.gz",
             f"{NGS_SV_COHORT_DIR}/merged/cohort.ngs_sv.merged.vcf.gz.tbi",

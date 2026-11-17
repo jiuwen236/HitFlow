@@ -18,6 +18,10 @@ LOGS_DIR = config["output"]["logs"]
 VERIFYBAMID2_ENABLED = config.get("verifybamid2", {}).get("enabled", True)
 
 # S14 Qualimap BamQC
+_QUALIMAP_CFG = config.get("qualimap", {})
+_QUALIMAP_MEM = str(_QUALIMAP_CFG.get("mem", "45g"))  # Java heap, e.g. "45g"
+
+
 rule qualimap_bamqc:
     input:
         bam = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/bam/{{sample_id}}.dup.sorted.bam"
@@ -27,10 +31,11 @@ rule qualimap_bamqc:
     params:
         outdir = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/qc/qualimap",
         chroms = ",".join(config["chromosomes"]),
-        ngs_scripts = config["ngs_scripts"]
-    threads: 8
+        ngs_scripts = config["ngs_scripts"],
+        java_mem = _QUALIMAP_MEM
+    threads: int(_QUALIMAP_CFG.get("threads", 8))
     resources:
-        mem_mb = 45 * 1024,  # 45g
+        mem_mb = memory_mb(_QUALIMAP_MEM),
         time = "200:00:00"
     envmodules:
         config["tool_modules"]["qualimap_module"],
@@ -47,7 +52,7 @@ rule qualimap_bamqc:
         """
         mkdir -p {params.outdir}
         
-        qualimap bamqc --java-mem-size=45g -nt {threads} \
+        qualimap bamqc --java-mem-size={params.java_mem} -nt {threads} \
             -bam {input.bam} -outdir {params.outdir} > {log} 2>&1
         """
         

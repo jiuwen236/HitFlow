@@ -15,6 +15,7 @@ def get_joint_calling_outputs():
     
     # Always produce normalized and filtered VCF
     outputs.append(f"{JOINT_CALLING_DIR}/filtered/cohort.filtered.recode.vcf.gz")
+    outputs.append(f"{JOINT_CALLING_DIR}/filtered/cohort.filtered.recode.stats.txt")
     
     # Add per-chromosome genotyped VCFs
     outputs.extend([f"{JOINT_CALLING_DIR}/genotyped/{chromosome}.genotyped.vcf.gz"
@@ -109,6 +110,8 @@ def get_basic_workflow_outputs():
     if config["workflows"].get("enable_ngs_single_sample_filtering", False):
         # Filtered and normalized VCF
         outputs.extend([f"{NGS_VARIANTS_SINGLE_DIR}/{sample_id}/variant_calling/normalized/{sample_id}.filtered.normalized.vcf.gz"
+                       for sample_id in sample_ids])
+        outputs.extend([f"{NGS_VARIANTS_SINGLE_DIR}/{sample_id}/variant_calling/normalized/{sample_id}.filtered.normalized.stats.txt"
                        for sample_id in sample_ids])
         
         # Annotation outputs (based on selected tool)
@@ -275,6 +278,17 @@ def get_cross_platform_sv_outputs():
             f"{cross_dir}/{pair_id}/{pair_id}.concordance.tsv",
         ])
     return outputs
+
+
+def get_cross_platform_sv_cohort_outputs():
+    """Cohort-level cross-platform SV catalogue (rules/cross_platform_sv_cohort.smk)."""
+    if not config["workflows"].get("enable_cross_platform_sv_cohort", False):
+        return []
+    return [
+        f"{CPC_DIR}/cohort.cross_sv.vcf.gz",
+        f"{CPC_DIR}/cohort.cross_sv.vcf.gz.tbi",
+        f"{CPC_DIR}/cohort.cross_sv.summary.tsv",
+    ]
 
 
 def get_hitsv_outputs():

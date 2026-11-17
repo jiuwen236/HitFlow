@@ -725,6 +725,33 @@ rule compress_filtered_vcf:
         bcftools index --tbi --force {output.vcf} >> {log} 2>&1
         """
 
+# S06c: Cohort and per-sample (-s -) summary statistics for MultiQC
+rule ngs_cohort_vcf_stats:
+    input:
+        vcf = f"{NGS_VARIANTS_COHORT_DIR}/filtered/cohort.filtered.recode.vcf.gz",
+        idx = f"{NGS_VARIANTS_COHORT_DIR}/filtered/cohort.filtered.recode.vcf.gz.tbi"
+    output:
+        stats = f"{NGS_VARIANTS_COHORT_DIR}/filtered/cohort.filtered.recode.stats.txt"
+    threads: 2
+    resources:
+        mem_mb = 4096,
+        partition = config["cluster"]["partition"],
+        time = config["cluster"]["time"]
+    envmodules:
+        config["tool_modules"]["bcftools_module"]
+    conda:
+        ENV_BCFTOOLS
+    container:
+        CONTAINER_BCFTOOLS
+    benchmark:
+        f"{LOGS_DIR}/benchmarks/joint_calling/cohort_vcf_stats.txt"
+    log:
+        f"{LOGS_DIR}/joint_calling/cohort_vcf_stats.log"
+    shell:
+        """
+        bcftools stats --threads {threads} -s - {input.vcf} > {output.stats} 2> {log}
+        """
+
 # Conditional phasing rules - only included if phasing is enabled
 if config["phasing"]["enabled"]:
     # S07a: Phasing with SHAPEIT5 per chromosome (outputs BCF)

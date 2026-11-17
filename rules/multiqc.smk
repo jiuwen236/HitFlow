@@ -50,6 +50,12 @@ def get_multiqc_input_files(wildcards=None):
             if config.get("verifybamid2", {}).get("enabled", True):
                 inputs.append(f"{NGS_ALIGNMENT_DIR}/{sample_id}/qc/verifybamid/{sample_id}.selfSM")
 
+        if config["workflows"].get("enable_ngs_single_sample_filtering", False):
+            inputs.extend([
+                f"{NGS_VARIANTS_SINGLE_DIR}/{sample_id}/variant_calling/normalized/{sample_id}.filtered.normalized.stats.txt"
+                for sample_id in sample_ids
+            ])
+
         if (
             config["workflows"].get("enable_ngs_single_sample_filtering", False)
             and config.get("ngs_single_sample_variants", {}).get("annotation", {}).get("tool", "funcotator") == "snpeff"
@@ -58,6 +64,9 @@ def get_multiqc_input_files(wildcards=None):
                 f"{NGS_VARIANTS_SINGLE_DIR}/{sample_id}/variant_calling/annotated/{sample_id}.snpeff_summary.html"
                 for sample_id in sample_ids
             ])
+
+    if config["workflows"].get("enable_ngs_joint_calling", False):
+        inputs.append(f"{NGS_VARIANTS_COHORT_DIR}/filtered/cohort.filtered.recode.stats.txt")
 
     if config["workflows"].get("enable_tgs_sv_detection", False):
         inputs.extend([
@@ -119,12 +128,14 @@ def get_multiqc_outputs():
     if not get_multiqc_input_files():
         return []
 
-    return [
+    outputs = [
         f"{MULTIQC_OUTDIR}/{MULTIQC_FILENAME}",
         f"{MULTIQC_OUTDIR}/{MULTIQC_BASENAME}_data",
-        f"{MULTIQC_OUTDIR}/{MULTIQC_BASENAME}_plots",
         f"{MULTIQC_OUTDIR}/multiqc_inputs.txt",
     ]
+    if MULTIQC_EXPORT_PLOTS:
+        outputs.append(f"{MULTIQC_OUTDIR}/{MULTIQC_BASENAME}_plots")
+    return outputs
 
 
 def _multiqc_module_args():
@@ -139,7 +150,9 @@ rule multiqc_report:
     output:
         report = f"{MULTIQC_OUTDIR}/{MULTIQC_FILENAME}",
         data_dir = directory(f"{MULTIQC_OUTDIR}/{MULTIQC_BASENAME}_data"),
-        plots_dir = directory(f"{MULTIQC_OUTDIR}/{MULTIQC_BASENAME}_plots"),
+        # MultiQC only writes the plot directory when --export is used.
+        **({"plots_dir": directory(f"{MULTIQC_OUTDIR}/{MULTIQC_BASENAME}_plots")}
+           if MULTIQC_EXPORT_PLOTS else {}),
         manifest = f"{MULTIQC_OUTDIR}/multiqc_inputs.txt"
     params:
         outdir = MULTIQC_OUTDIR,

@@ -1,7 +1,8 @@
 # Cross-platform (NGS + TGS) Structural Variant integration
 #
 # Purpose: for samples that were sequenced on BOTH platforms, merge the per-sample
-# short-read (NGS) and long-read (TGS) SV call sets with SURVIVOR to produce:
+# short-read (NGS) and long-read (TGS) SV call sets with SURVIVOR (default) or truvari collapse
+# (cross_platform_sv.method: truvari) to produce:
 #   1. a merged VCF carrying SURVIVOR's INFO/SUPP_VEC (which platform(s) support each SV)
 #   2. a concordance summary (NGS-only / TGS-only / shared counts, per SV type)
 #
@@ -48,6 +49,21 @@ CROSS_SV_MIN_SUPPORT = 1
 # we do NOT require identical type when matching across platforms.
 CROSS_SV_TYPE_FLAG = 1 if _CROSS_SV_CFG.get("require_same_type", False) else 0
 CROSS_SV_STRAND_FLAG = 1 if _CROSS_SV_CFG.get("require_same_strand", False) else 0
+CROSS_SV_METHOD = str(_CROSS_SV_CFG.get("method", "survivor")).strip().lower()
+if CROSS_SV_METHOD not in ("survivor", "truvari"):
+    raise ValueError(f"cross_platform_sv.method must be 'survivor' or 'truvari', got '{CROSS_SV_METHOD}'")
+# truvari: match by breakpoint distance and size only (short-read SVs carry no sequence).
+_CROSS_SV_TRUVARI = _CROSS_SV_CFG.get("truvari", {})
+CROSS_SV_TRUVARI_PCTSIZE = _CROSS_SV_TRUVARI.get("pctsize", 0.7)
+CROSS_SV_TRUVARI_SIZEMAX = _CROSS_SV_TRUVARI.get("sizemax", 100000000)
+# Missing genotypes at force-called candidate sites do not establish sample support.
+# Native caller VCFs can use missing GT for detected SVs, so retain those without force calling.
+CROSS_SV_TGS_GT_FILTER = (
+    "-i 'GT=\"alt\"'" if config.get("tgs_config", {}).get("sv_detection", {}).get("force_calling", True)
+    else "-e 'GT=\"ref\"'"
+)
+CROSS_SV_SCRIPT_DIR = os.path.join(workflow.basedir, "scripts")
+ENV_TRUVARI = "../envs/long_read/ont_truvari.yaml"
 
 # SUPP_VEC positions follow the order the inputs are written into the merge list below.
 CROSS_SV_NGS_INDEX = 0
@@ -82,6 +98,8 @@ rule cross_platform_sv_sanitize:
     output:
         merge_list = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/merge_files.txt",
         done_flag = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/.sanitize_done",
+    params:
+        tgs_gt_filter = CROSS_SV_TGS_GT_FILTER
     threads: 1
     resources:
         mem_mb = 4 * 1024,
@@ -109,7 +127,13 @@ rule cross_platform_sv_sanitize:
             local label="$2"
             local out="$OUTDIR/${{label}}_sanitized.vcf"
             echo "Info: sanitizing $src -> $out" >> {log}
-            zcat "$src" | awk 'BEGIN{{OFS="\t"}}
+            if [ "$label" = tgs ]; then
+                # With force calling, the TGS final VCF lists every cohort candidate site and
+                # writes 0/0 where this sample does not carry it; keep only carried sites.
+                bcftools view {params.tgs_gt_filter} "$src" 2>> {log}
+            else
+                zcat "$src"
+            fi | awk 'BEGIN{{OFS="\t"}}
                 /^#/ {{print; next}}
                 {{
                     if ($4 == ".") $4 = "N"
@@ -150,42 +174,147 @@ rule cross_platform_sv_sanitize:
         """
 
 
-rule cross_platform_sv_merge_run:
-    """Run SURVIVOR merge on the sanitized NGS+TGS VCFs (union; support>=1)."""
-    input:
-        merge_list = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/merge_files.txt",
-        done_flag = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/.sanitize_done",
-    output:
-        merged_vcf = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/{{pair}}.cross_sv.merged.vcf",
-    params:
-        max_distance = CROSS_SV_MAX_DISTANCE,
-        min_support = CROSS_SV_MIN_SUPPORT,
-        type_flag = CROSS_SV_TYPE_FLAG,
-        strand_flag = CROSS_SV_STRAND_FLAG,
-        min_length = CROSS_SV_MIN_LENGTH,
-    threads: 1
-    resources:
-        mem_mb = 8 * 1024,
-        partition = config["cluster"]["partition"],
-        time = config["cluster"]["time"]
-    envmodules:
-        config["tool_modules"]["survivor_module"]
-    conda:
-        ENV_SURVIVOR
-    container:
-        config["containers"]["survivor"]
-    log:
-        f"{LOGS_DIR}/cross_platform_sv/{{pair}}.merge.log"
-    shell:
-        """
-        echo "SURVIVOR which: $(command -v SURVIVOR)" >> {log} 2>&1 || true
-        SURVIVOR --version >> {log} 2>&1 || true
+if CROSS_SV_METHOD == "survivor":
+    rule cross_platform_sv_merge_run:
+        """Run SURVIVOR merge on the sanitized NGS+TGS VCFs (union; support>=1)."""
+        input:
+            merge_list = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/merge_files.txt",
+            done_flag = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/.sanitize_done",
+        output:
+            merged_vcf = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/{{pair}}.cross_sv.merged.vcf",
+        params:
+            max_distance = CROSS_SV_MAX_DISTANCE,
+            min_support = CROSS_SV_MIN_SUPPORT,
+            type_flag = CROSS_SV_TYPE_FLAG,
+            strand_flag = CROSS_SV_STRAND_FLAG,
+            min_length = CROSS_SV_MIN_LENGTH,
+        threads: 1
+        resources:
+            mem_mb = 8 * 1024,
+            partition = config["cluster"]["partition"],
+            time = config["cluster"]["time"]
+        envmodules:
+            config["tool_modules"]["survivor_module"]
+        conda:
+            ENV_SURVIVOR
+        container:
+            config["containers"]["survivor"]
+        log:
+            f"{LOGS_DIR}/cross_platform_sv/{{pair}}.merge.log"
+        shell:
+            """
+            echo "SURVIVOR which: $(command -v SURVIVOR)" >> {log} 2>&1 || true
+            SURVIVOR --version >> {log} 2>&1 || true
 
-        SURVIVOR merge \
-            {input.merge_list} \
-            {params.max_distance} {params.min_support} {params.type_flag} {params.strand_flag} 0 {params.min_length} \
-            {output.merged_vcf} >> {log} 2>&1
-        """
+            SURVIVOR merge \
+                {input.merge_list} \
+                {params.max_distance} {params.min_support} {params.type_flag} {params.strand_flag} 0 {params.min_length} \
+                {output.merged_vcf} >> {log} 2>&1
+            """
+
+
+else:
+    rule cross_platform_sv_truvari_concat:
+        """Tag each sanitized VCF with INFO/CALLER=ngs|tgs, give both one sample column and
+        concatenate them for truvari (bcftools image). CIPOS/CIEND are dropped: SURVIVOR output
+        declares them as String, which truvari cannot use, and matching does not need them."""
+        input:
+            merge_list = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/merge_files.txt",
+            done_flag = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/.sanitize_done",
+        output:
+            vcf = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/truvari/{{pair}}.concat.vcf.gz",
+            tbi = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/truvari/{{pair}}.concat.vcf.gz.tbi",
+        threads: 1
+        resources:
+            mem_mb = 4 * 1024,
+            partition = config["cluster"]["partition"],
+            time = config["cluster"]["time"]
+        envmodules:
+            config["tool_modules"]["tabix_module"],
+            config["tool_modules"]["bcftools_module"]
+        conda:
+            ENV_BASIC
+        container:
+            config["containers"]["bcftools"]
+        log:
+            f"{LOGS_DIR}/cross_platform_sv/{{pair}}.truvari_concat.log"
+        shell:
+            """
+            set -o pipefail
+            OUT=$(dirname {output.vcf}); mkdir -p "$OUT"
+            : > {log}
+            # merge_files.txt lists the NGS VCF first and the TGS VCF second.
+            i=0
+            while read -r vcf; do
+                [ -z "$vcf" ] && continue
+                i=$((i + 1)); label=ngs; [ $i -eq 2 ] && label=tgs
+                awk -v lab=$label 'BEGIN{{OFS="\t"}}
+                    /^##/ {{print; next}}
+                    /^#CHROM/ {{
+                        print "##INFO=<ID=CALLER,Number=1,Type=String,Description=\\"Source call set (ngs or tgs)\\">"
+                        print $1,$2,$3,$4,$5,$6,$7,$8,"FORMAT","PAIR"; next
+                    }}
+                    {{
+                        $8 = ($8 == "." ? "" : $8 ";") "CALLER=" lab
+                        if (NF < 10) {{ $9 = "GT"; $10 = "./." }}
+                        print $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+                    }}' "$vcf" \\
+                    | bcftools annotate -x INFO/CIPOS,INFO/CIEND -Ou 2>> {log} \\
+                    | bcftools sort -Oz -o "$OUT/$label.tagged.vcf.gz" 2>> {log}
+                tabix -f -p vcf "$OUT/$label.tagged.vcf.gz"
+            done < {input.merge_list}
+            if [ $i -ne 2 ]; then
+                echo "Error: expected 2 sanitized VCFs, found $i" >> {log}; exit 1
+            fi
+            bcftools concat -a "$OUT/ngs.tagged.vcf.gz" "$OUT/tgs.tagged.vcf.gz" -Oz -o {output.vcf} 2>> {log}
+            tabix -f -p vcf {output.vcf}
+            rm -f "$OUT"/ngs.tagged.vcf.gz* "$OUT"/tgs.tagged.vcf.gz*
+            """
+
+    rule cross_platform_sv_truvari_collapse:
+        """Match NGS and TGS calls with truvari collapse, then recover which call sets support
+        each representative and write SUPP_VEC (truvari image: truvari + python3)."""
+        input:
+            vcf = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/truvari/{{pair}}.concat.vcf.gz",
+            tbi = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/truvari/{{pair}}.concat.vcf.gz.tbi",
+            ref = config["reference"]["genome"],
+        output:
+            merged_vcf = f"{CROSS_PLATFORM_SV_DIR}/{{pair}}/{{pair}}.cross_sv.merged.vcf",
+        params:
+            refdist = CROSS_SV_MAX_DISTANCE,
+            pctsize = CROSS_SV_TRUVARI_PCTSIZE,
+            sizemin = CROSS_SV_MIN_LENGTH,
+            sizemax = CROSS_SV_TRUVARI_SIZEMAX,
+            type_opt = "" if CROSS_SV_TYPE_FLAG else "--typeignore",
+            support_script = os.path.join(CROSS_SV_SCRIPT_DIR, "sv_pipeline_scripts", "annotate_caller_support.py"),
+            supp_script = os.path.join(CROSS_SV_SCRIPT_DIR, "cross_platform", "supp_vec_from_callers.py"),
+        threads: 1
+        resources:
+            mem_mb = 8 * 1024,
+            partition = config["cluster"]["partition"],
+            time = config["cluster"]["time"]
+        conda:
+            ENV_TRUVARI
+        container:
+            config["containers"].get("truvari", "docker://quay.io/biocontainers/truvari:5.4.0--pyhdfd78af_0")
+        log:
+            f"{LOGS_DIR}/cross_platform_sv/{{pair}}.truvari_collapse.log"
+        shell:
+            """
+            set -o pipefail
+            WORK=$(dirname {input.vcf})
+            rm -f "$WORK/collapsed.vcf" "$WORK/removed.vcf"
+            # --pctseq 0: short-read SVs have no sequence. The long-read record is kept as the
+            # representative (sequence-resolved) via --priority tgs,ngs below.
+            truvari collapse -i {input.vcf} -o "$WORK/collapsed.vcf" -c "$WORK/removed.vcf" \
+                -f {input.ref} -k first {params.type_opt} --pctseq 0 \
+                --pctsize {params.pctsize} --refdist {params.refdist} \
+                --sizemin {params.sizemin} --sizemax {params.sizemax} > {log} 2>&1
+            python3 {params.support_script:q} --collapsed "$WORK/collapsed.vcf" --removed "$WORK/removed.vcf" \
+                --priority tgs,ngs --output "$WORK/support.vcf" 2>> {log}
+            python3 {params.supp_script:q} --input "$WORK/support.vcf" --output {output.merged_vcf} 2>> {log}
+            rm -f "$WORK/collapsed.vcf" "$WORK/removed.vcf" "$WORK/support.vcf"
+            """
 
 
 rule cross_platform_sv_finalize:
@@ -225,7 +354,8 @@ rule cross_platform_sv_finalize:
             grep "^#" "{input.merged_vcf}" > "$TMP_VCF_CLEAN" || true
         fi
 
-        bgzip -f -c "$TMP_VCF_CLEAN" > {output.merged_vcf_gz}
+        # SURVIVOR and truvari both write unsorted records; tabix needs sorted input.
+        bcftools sort -T "$(dirname {output.merged_vcf_gz})" -Oz -o {output.merged_vcf_gz} "$TMP_VCF_CLEAN" 2>> {log}
         tabix -f -p vcf {output.merged_vcf_gz}
         rm -f "$TMP_VCF_CLEAN"
 
