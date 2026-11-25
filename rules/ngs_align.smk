@@ -18,6 +18,20 @@ NGS_ALIGNMENT_DIR = config["output"]["ngs"]["alignment"]
 TMP_DIR = config["output"]["tmp"]
 LOGS_DIR = config["output"]["logs"]
 
+# Pipe outputs group the existing container-specific rules without materializing SAM.
+NGS_STREAM_ALIGNMENT = config["bwa"].get("stream_alignment", False)
+if not isinstance(NGS_STREAM_ALIGNMENT, bool):
+    raise ValueError("bwa.stream_alignment must be a YAML boolean")
+
+# Mixed FASTQ/BAM samples use both alignment and symlink producers of the same BAM.
+# Retain the legacy DAG rather than grouping those overlapping outputs into a pipe.
+if NGS_STREAM_ALIGNMENT and any(
+    sample_has_bam(sample_id) and sample_has_fastq(sample_id)
+    for sample_id in get_all_sample_ids()
+):
+    print("[NGS] Mixed FASTQ/BAM sample detected; using disk-backed alignment.")
+    NGS_STREAM_ALIGNMENT = False
+
 # Rule order: prefer symlink_user_bam_presort over bwa_mem_step3_sort when user provides BAM
 ruleorder: symlink_user_bam_presort > bwa_mem_step3_sort
 
@@ -197,7 +211,11 @@ rule bwa_mem_step1:
         pac = config["resolved_paths"]["reference_genome"] + ".pac",
         sa = config["resolved_paths"]["reference_genome"] + ".sa"
     output:
-        sam = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.raw.sam"
+        sam = (
+            pipe(f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.raw.sam")
+            if NGS_STREAM_ALIGNMENT
+            else f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.raw.sam"
+        )
     params:
         rg = lambda wildcards: f"@RG\\tID:{wildcards.sample_id}\\tSM:{wildcards.sample_id}\\tLB:wgs\\tPL:Illumina",
         opts = config["bwa"]["options"]
@@ -232,8 +250,13 @@ rule bwa_mem_step2_samblaster:
     output:
         split = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.split.sam",
         discordant = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.discordant.sam",
-        sam = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.marked.sam"
-    threads: 4
+        sam = (
+            pipe(f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.marked.sam")
+            if NGS_STREAM_ALIGNMENT
+            else f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.marked.sam"
+        )
+    # Samblaster is single-threaded; do not reserve four concurrent pipe cores.
+    threads: 1 if NGS_STREAM_ALIGNMENT else 4
     resources:
         mem_mb = 8192,
         partition = config["cluster"]["partition"],
@@ -263,7 +286,11 @@ rule bwa_mem_step3_sort:
         sam = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.marked.sam"
     output:
         bam = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/bam/{{sample_id}}.dup.sorted.bam",
-        bai = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/bam/{{sample_id}}.dup.sorted.bai"
+        bai = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/bam/{{sample_id}}.dup.sorted.bai",
+        stream_complete = (
+            touch(temp(f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.streamed.complete"))
+            if NGS_STREAM_ALIGNMENT else []
+        )
     params:
         sort_mem = config["sambamba"]["sort_mem"]
     threads: config["bwa"]["threads"]
@@ -287,22 +314,28 @@ rule bwa_mem_step3_sort:
         """
         mkdir -p {NGS_ALIGNMENT_DIR}/{wildcards.sample_id}/bam
         TMP_DIR_SORT=$(mktemp -d -p .)
-        
-        sambamba view -S -f bam -t {threads} {input.sam} | \
-        sambamba sort -m {params.sort_mem} -t {threads} \
-          --tmpdir $TMP_DIR_SORT \
-          /dev/stdin \
-          -o {output.bam} && \
-        sambamba index -t {threads} {output.bam} {output.bai}
-        
-        rm -rf $TMP_DIR_SORT
+        trap 'rm -rf "$TMP_DIR_SORT"' EXIT
+
+        {{
+          sambamba view -S -f bam -t {threads} {input.sam} | \
+          sambamba sort -m {params.sort_mem} -t {threads} \
+            --tmpdir "$TMP_DIR_SORT" \
+            /dev/stdin \
+            -o {output.bam}
+          sambamba index -t {threads} {output.bam} {output.bai}
+        }} > {log} 2>&1
         """
 
 # S07 Convert SAM to BAM and create indices - No merging needed since no readsets
 rule convert_sam_to_bam:
     input:
         split_sam = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.split.sam",
-        discordant_sam = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.discordant.sam"
+        discordant_sam = f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.discordant.sam",
+        # Keep the marked-SAM pipe consumed even when a user BAM has priority.
+        stream_complete = (
+            f"{TMP_DIR}/{{sample_id}}/alignment/{{sample_id}}.streamed.complete"
+            if NGS_STREAM_ALIGNMENT else []
+        )
     output:
         split_bam = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/bam/{{sample_id}}.split.bam",
         split_bai = f"{NGS_ALIGNMENT_DIR}/{{sample_id}}/bam/{{sample_id}}.split.bai",

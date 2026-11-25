@@ -106,6 +106,8 @@ Profiles for local and Slurm execution with Apptainer or Conda are in `profiles/
 
 Each rule takes its threads, memory and runtime from the configuration. Several memory-intensive rules raise their memory request by 1.5× on each retry, up to `cluster.retry_max_mem_mb` (128 GiB by default).
 
+`bwa.stream_alignment: true` (default `false`) pipes BWA-MEM, samblaster and sambamba without intermediate SAM files; the group needs 2 × `bwa.threads` + 1 cores on one node. Keep a fixed `-K` in `bwa.options`, otherwise alignments can change with `bwa.threads`.
+
 As an alternative to profiles, `scripts/run_snakemake.sh` wraps the same options:
 
 ```bash

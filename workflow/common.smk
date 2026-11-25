@@ -36,6 +36,23 @@ if _config_path is None:
 _yaml_cfg = load_yaml_with_merged_duplicates(_config_path)
 config = deep_merge_dicts(_yaml_cfg, _cli_cfg)
 
+# BWA's default batch size scales with threads and can affect alignments.
+import shlex
+from snakemake.logging import logger
+
+_bwa_options = str(config.get("bwa", {}).get("options", "") or "")
+try:
+    _bwa_tokens = shlex.split(_bwa_options)
+except ValueError:
+    _bwa_tokens = _bwa_options.split()
+if not any(token == "-K" or (token.startswith("-K") and token[2:].isdigit()) for token in _bwa_tokens):
+    logger.warning(
+        "bwa.options does not specify -K. BWA-MEM's default batch size scales "
+        "with the thread count, so changing threads may change alignments and "
+        "downstream variants. Consider a fixed batch size (e.g. -K 100000000) "
+        "and verify result invariance for your inputs and tool version.",
+    )
+
 # Bundled helper scripts and binaries live next to the Snakefile, so runs work
 # from any working directory. Relative values of the script-path settings
 # below are first looked up in the working directory (previous behaviour),
